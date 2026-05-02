@@ -1,0 +1,42 @@
+# Rust / Anchor
+target/
+**/*.rs.bk
+*.so
+.anchor/
+test-ledger/
+.crates.toml
+.crates2.json
+
+# Solana keypairs
+*-keypair.json
+!**/programs/**/*-keypair.json.example
+
+# Node / TS
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Lockfile policy: keep pnpm-lock.yaml, ignore others
+package-lock.json
+yarn.lock
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

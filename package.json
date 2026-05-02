@@ -1,0 +1,16 @@
+{
+  "name": "mancer-vesting",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Solana Merkle-compressed token vesting with per-recipient clawback",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "anchor build",
+    "test": "anchor test",
+    "lint": "pnpm -r --if-present lint"
+  }
+}
