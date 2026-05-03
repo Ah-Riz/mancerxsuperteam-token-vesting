@@ -29,6 +29,11 @@ jobs:
           # On a fresh runner the dir doesn't exist yet, so it panics before it
           # can download platform-tools. Create it empty.
           mkdir -p "$HOME/.cache/solana"
+          # AnchorProvider.env() reads ~/.config/solana/id.json (per Anchor.toml).
+          # Generate a throwaway keypair for the test runner.
+          mkdir -p "$HOME/.config/solana"
+          "$HOME/.local/share/solana/install/active_release/bin/solana-keygen" new \
+            --no-bip39-passphrase --silent -o "$HOME/.config/solana/id.json"
 
       - name: Cache Solana platform tools
         uses: actions/cache@v4
