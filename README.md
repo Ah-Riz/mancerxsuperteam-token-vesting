@@ -49,6 +49,10 @@ The program declares **10 instruction entry points** matching the Week 2 archite
 
 > **Week 3 status**: All 10 handlers compile with empty `Ok(())` bodies. State structs (`VestingTree`, `ClaimRecord`, `VestingLeaf`), error codes, and event types are fully defined per Week 2 architecture. Real instruction logic, Merkle math, and integration tests land in Weeks 4-5.
 
+For deeper reads:
+- [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts, where Week 4 picks up.
+- [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, sample calls.
+
 ## Prerequisites
 
 - Rust stable (edition 2021)
