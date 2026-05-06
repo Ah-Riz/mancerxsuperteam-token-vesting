@@ -68,7 +68,28 @@ git clone https://github.com/Ah-Riz/mancerxsuperteam-token-vesting.git
 cd mancerxsuperteam-token-vesting
 
 pnpm install
+```
+
+### First build — sync program ID
+
+The repo ships with a placeholder program ID. You must sync it to your local keypair before the first build:
+
+```bash
+solana address -k target/deploy/vesting-keypair.json
+# Copy the output address, then replace in Anchor.toml and programs/vesting/src/lib.rs:
+PROG_ID=$(solana address -k target/deploy/vesting-keypair.json) && \
+sed -i "s/Vest1111111111111111111111111111111111111111/$PROG_ID/g" Anchor.toml programs/vesting/src/lib.rs
+```
+
+Then build:
+
+```bash
 anchor build
+```
+
+### Run tests
+
+```bash
 anchor test
 ```
 
