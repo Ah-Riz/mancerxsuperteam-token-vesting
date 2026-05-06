@@ -60,10 +60,15 @@ avm use 1.0.0
 anchor --version
 ```
 
-### 4. Node and pnpm
+### 4. Node (≥ 20.10) and pnpm (≥ 10)
 
-- Node ≥ 20
-- pnpm ≥ 10 (`npm i -g pnpm`)
+Install Node via [nvm](https://github.com/nvm-sh/nvm) or [official installer](https://nodejs.org/), then:
+
+```bash
+node --version          # must be ≥ 20.10
+npm install -g pnpm
+pnpm --version          # must be ≥ 10
+```
 
 ## Quickstart
 
