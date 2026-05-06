@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["mocha", "chai"],
+    "composite": false,
+    "incremental": false
+  },
+  "include": ["tests/**/*.ts"]
+}
