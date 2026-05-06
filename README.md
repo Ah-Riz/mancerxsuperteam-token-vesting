@@ -4,6 +4,8 @@ Solana token-distribution protocol combining Merkle-tree compression with full v
 
 Built by Team 7 (Mancer x Superteam Scholarship).
 
+> **Build verified by @geral on 2026-05-06.** Clone-to-devnet in ~20 min on WSL/Ubuntu. See [Week 3 report](report-week3.md) for full verification log and friction points found.
+
 ## Repo layout
 
 ```
