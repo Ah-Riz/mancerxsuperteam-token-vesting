@@ -31,6 +31,9 @@ yarn.lock
 .env.*
 !.env.example
 
+# Claude Code
+.claude/
+
 # IDE / OS
 .idea/
 .vscode/*
