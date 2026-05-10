@@ -10,7 +10,7 @@ import { Connection, PublicKey, type Signer } from "@solana/web3.js";
 // import IDL from "./idl.json";
 
 const PROGRAM_ID = new PublicKey(
-  "7mGET6XMy7yqJqFVfSZ7zYxsLowJWXYhDmsMm8MHjdVv",
+  "G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu",
 );
 
 export function getProvider(connection: Connection, wallet: Signer) {
