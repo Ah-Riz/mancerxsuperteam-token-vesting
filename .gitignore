@@ -33,6 +33,8 @@ yarn.lock
 
 # Claude Code
 .claude/
+CLAUDE.md
+**/CLAUDE.md
 
 # Research docs (private, not for GitHub)
 research-docs/
