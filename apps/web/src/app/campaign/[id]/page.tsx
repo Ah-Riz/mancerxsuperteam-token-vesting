@@ -3,10 +3,13 @@
 // Recipient Dashboard: fetch proof from IPFS, compute vested, claim
 // Ref: research-week2.md §12.2 Day 6
 
-export default function CampaignPage({ params }: { params: { id: string } }) {
+import { use } from "react";
+
+export default function CampaignPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   return (
     <main className="max-w-2xl mx-auto p-8">
-      <h1 className="text-2xl font-bold mb-6">Campaign {params.id}</h1>
+      <h1 className="text-2xl font-bold mb-6">Campaign {id}</h1>
       {/* TODO Week 3 Day 6:
           1. Fetch IPFS proof by (treeRoot, beneficiary)
           2. Compute vested amount via bigint preview
