@@ -48,15 +48,6 @@ jobs:
           avm use 1.0.0
           anchor --version
 
-      - name: Install surfpool (Anchor 1.0 default test validator)
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -sSfL "https://github.com/solana-foundation/surfpool/releases/latest/download/surfpool-linux-x64.tar.gz" \
-            | tar xz -C "$HOME/.local/bin"
-          chmod +x "$HOME/.local/bin/surfpool"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          "$HOME/.local/bin/surfpool" --version
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -89,8 +80,24 @@ jobs:
           fi
           anchor build
 
+      - name: Start local validator
+        run: |
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --bpf-program G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu target/deploy/vesting.so \
+            &
+          # Wait for validator to be ready
+          for i in $(seq 1 30); do
+            if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+              echo "Validator ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
       - name: anchor test
-        run: anchor test
+        run: anchor test --skip-local-validator
 
   # ── Web backend: vitest (zero secrets, all mocked) ────────────────────
 
