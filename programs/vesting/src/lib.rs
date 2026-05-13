@@ -69,9 +69,8 @@ pub mod vesting {
 
     pub fn close_claim_record(
         ctx: Context<CloseClaimRecord>,
-        expected_total: u64,
     ) -> Result<()> {
-        instructions::close_claim_record::handler(ctx, expected_total)
+        instructions::close_claim_record::handler(ctx)
     }
 
     pub fn get_vested_amount(
