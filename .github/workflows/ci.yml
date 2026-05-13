@@ -82,7 +82,7 @@ jobs:
           anchor build
 
       - name: anchor test
-        run: anchor test
+        run: anchor test --provider.cluster localnet
 
   # ── Web backend: vitest (zero secrets, all mocked) ────────────────────
 
