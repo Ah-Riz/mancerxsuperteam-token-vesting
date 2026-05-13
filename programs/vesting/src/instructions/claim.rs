@@ -87,6 +87,7 @@ pub fn handler(ctx: Context<Claim>, leaf: VestingLeaf, proof: Vec<[u8; 32]>) -> 
         cr.tree = tree_key;
         cr.beneficiary = ctx.accounts.beneficiary.key();
         cr.claimed_amount = 0;
+        cr.total_entitled = leaf.amount;
         cr.milestone_bitmap = [0u8; 32];
         cr.last_claim_at = 0;
         cr.bump = ctx.bumps.claim_record;
