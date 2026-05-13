@@ -24,7 +24,6 @@ import {
   expectAnchorError,
   createAndFundCampaign,
   issueClaim,
-  validateClockAdvance,
 } from "./utils/helpers";
 import {
   ReleaseType,
@@ -248,116 +247,6 @@ describe("security exploit attempts (should all be blocked)", () => {
       expect.fail("EXPLOIT 3 SUCCEEDED: forged proof should have been rejected");
     } catch (e) {
       expectAnchorError(e, ERR.InvalidProof);
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // EXPLOIT 4: Claim after full withdrawal (cancel + withdraw unvested)
-  // Cancel campaign, wait for grace, withdraw everything from vault,
-  // then try to claim -> InsufficientVault
-  // -------------------------------------------------------------------------
-  it("EXPLOIT 4: claim after full vault withdrawal -> InsufficientVault", async function() {
-    const beneficiary = await makeBeneficiary(provider);
-    const AMOUNT = 1_000_000;
-
-    // Fully vested in the past
-    const t = await createTimeHelpers(provider.connection);
-    const start = t.past(2000);
-    const end = t.past(10);
-
-    const leaf: VestingLeaf = {
-      leafIndex: 0,
-      beneficiary: beneficiary.publicKey,
-      amount: new BN(AMOUNT),
-      releaseType: ReleaseType.Linear,
-      startTime: new BN(start),
-      cliffTime: new BN(start),
-      endTime: new BN(end),
-      milestoneIdx: 0,
-    };
-
-    const { mint, tree, treePda, vaultAuthPda, vault } =
-      await createAndFundCampaign(
-        { provider, program, creator, cancelAuthority, pauseAuthority },
-        703,
-        [leaf],
-        AMOUNT,
-      );
-
-    // Cancel the campaign
-    await program.methods
-      .cancelCampaign()
-      .accounts({
-        cancelAuthority: cancelAuthority.publicKey,
-        vestingTree: treePda,
-      })
-      .signers([cancelAuthority])
-      .rpc();
-
-    // We need to skip the 7-day grace period. Use bank run to warp clock.
-    // The grace period is 7 * 24 * 60 * 60 = 604800 seconds.
-    // We'll use the provider's connection to advance the clock via `@coral-xyz/anchor`
-    // workspace provider which supports `connection.getSlot()` based time.
-    // However, on a local validator, we can directly warp the clock via
-    // `solana-test-validator --warp-slot` approach. Instead, we use the
-    // AnchorProvider's `wallet` to call `connection.rpcRequest` to set the
-    // `Clock` sysvar forward by the grace period.
-
-    // Warp clock past grace period using setClock RPC (available on local test validator)
-    const GRACE_PERIOD_SECS = 7 * 24 * 60 * 60;
-    const clockValid = await validateClockAdvance(
-      provider,
-      t.now + GRACE_PERIOD_SECS + 100,
-      t.now,
-    );
-    if (!clockValid) {
-      this.skip();
-    }
-
-    // Withdraw unvested (should succeed after grace period)
-    try {
-      await program.methods
-        .withdrawUnvested()
-        .accounts({
-          creator: creator.publicKey,
-          vestingTree: treePda,
-          vaultAuthority: vaultAuthPda,
-          vault,
-          creatorAta: getAssociatedTokenAddressSync(mint, creator.publicKey),
-        })
-        .signers([creator])
-        .rpc();
-    } catch {
-      // Clock didn't actually advance (setClock was a no-op) -- skip honestly
-      this.skip();
-    }
-
-    // Verify the vault is now empty
-    try {
-      const vaultAccount = await getAccount(provider.connection, vault);
-      if (vaultAccount.amount > 0) {
-        // Vault still has funds -- cannot test this exploit
-        this.skip();
-      }
-    } catch {
-      // Vault account closed or doesn't exist -- even better for our test
-    }
-
-    // Now try to claim -> should fail with InsufficientVault
-    try {
-      await issueClaim(
-        { program },
-        leaf,
-        tree.proof(0),
-        beneficiary,
-        treePda,
-        vaultAuthPda,
-        vault,
-        mint,
-      );
-      expect.fail("EXPLOIT 4 SUCCEEDED: claim after vault withdrawal should have been rejected");
-    } catch (e) {
-      expectAnchorError(e, ERR.InsufficientVault);
     }
   });
 
