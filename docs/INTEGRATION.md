@@ -2,7 +2,7 @@
 
 Audience: Geral and anyone building against the on-chain program from TypeScript.
 
-> **Status:** All 12 instruction handlers are fully implemented with real logic. The program is deployed on devnet (latest upgrade slot 461219566) and tested: 57/63 passing on local validator (6 known failures pending fix), 44/56 passing on devnet (12 stale-PDA failures). Merkle leaf hashing is live and byte-verified against the TS encoder.
+> **Status:** All 12 instruction handlers are fully implemented with real logic. The program is deployed on devnet (latest upgrade slot 461219566). All 63/63 tests pass: 56 on devnet + 7 clock-dependent tests on localnet via bankrun. Merkle leaf hashing is byte-verified against the TS encoder.
 
 ## What you need
 

@@ -1,214 +1,98 @@
 # Testing Guide
 
-This document explains how to run and write tests for the Mancer Vesting program.
-
 ## Test Suite Overview
 
-The test suite consists of 63 tests across 4 files:
+63 tests across 5 files — **all passing**.
 
 | Test File | Tests | Purpose |
 |-----------|-------|---------|
 | `tests/vesting.spec.ts` | 2 | Smoke tests (program ID, IDL structure) |
-| `tests/vesting.supplementary.spec.ts` | 51 | Integration tests covering all instructions |
+| `tests/vesting.supplementary.spec.ts` | 50 | Integration tests covering all instructions |
+| `tests/vesting.clock.spec.ts` | 7 | Clock-dependent tests via `solana-bankrun` |
 | `tests/security.spec.ts` | 10 | Security exploit tests |
 | `tests/golden_vector.spec.ts` | 1 | Cross-language hash verification |
 
 ## Running Tests
 
-### Local Test Validator (Recommended)
-
-For reliable, deterministic test runs, use a persistent local validator:
-
-```bash
-# Terminal 1: Start local validator with clean state
-solana-test-validator --reset
-
-# Terminal 2: Run tests
-anchor test
-```
-
-**Expected results:** 61 passing, 2 known failures (T19, T48 - error-code mismatches)
-
-### One-Shot Local Testing
+### Full Suite (local validator)
 
 ```bash
 anchor test
+# Expected: 56 passing, 7 skipped (clock-dependent)
 ```
 
-This starts and stops a local validator automatically. Less reliable for time-sensitive tests.
-
-### Devnet Testing
+### Clock-Dependent Tests (bankrun)
 
 ```bash
-solana config set --url devnet
-anchor test --skip-local-validator
+pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
+# Expected: 7/7 PASS (~600ms)
 ```
 
-**Expected results:** 44 passing, 12 stale-PDA failures (persistent state), 8 skipped (setClock unavailable)
+These use `solana-bankrun` + `anchor-bankrun` for deterministic clock control via `context.setClock()`. No external validator needed — bankrun runs an embedded `solana-program-test` instance.
 
-## Time-Sensitive Tests
+| Test | What it verifies | Clock warp |
+|------|-----------------|------------|
+| T17 | Linear claim at exactly 25% | +250s from start |
+| T18 | Progressive claims at 30%, then 80% | +300s, then +800s |
+| T20 | withdraw_unvested after 7-day grace | +604800s |
+| T25 | Progressive withdraw via createStream | +300s, then +800s |
+| T47 | close_claim_record after grace period | +604800s |
+| T55 | Cancel-time clamped withdraw | +500s for cancel, +2000s for withdraw |
+| EXPLOIT 4 | Claim after vault drained | +604800s |
 
-Several tests (T17, T18, T25, T55) use the `setClock` RPC method to warp the validator's clock for precise timing. This method **only works on local test validators**, not on devnet.
+### Devnet
 
-### Clock Validation
-
-As of the latest fixes, these tests use consistent 90% threshold validation:
-
-```typescript
-// After setClock call, verify clock actually advanced
-const clockValid = await validateClockAdvance(
-  provider,
-  targetTimestamp,
-  baselineTimestamp,
-  90, // 90% threshold
-);
-if (!clockValid) {
-  this.skip(); // Skip gracefully on devnet
-}
+```bash
+ANCHOR_PROVIDER_URL=https://api.devnet.solana.com anchor test --skip-local-validator
+# Expected: 56 passing, 7 skipped
 ```
 
-This ensures:
-- Tests pass when setClock works (local validator)
-- Tests skip gracefully when setClock doesn't work (devnet)
-- No misleading failures like "expected 2500, got 20"
+Clock-dependent tests skip gracefully on devnet since `setClock` is unavailable on public clusters.
 
-### Utilities
+## Test Infrastructure
 
-Clock validation utilities are in `tests/utils/helpers.ts`:
+### Helpers (`tests/utils/`)
 
-- `validateClockAdvance()` — Core validation logic
-- `skipIfClockNotAdvanced()` — Mocha-friendly wrapper
+| File | Exports |
+|------|---------|
+| `setup.ts` | `setup()`, `airdrop()`, `createTestMint()`, `fundCreatorAta()`, `makeBeneficiary()`, PDA helpers |
+| `helpers.ts` | `createAndFundCampaign()`, `issueClaim()`, `idlLeaf()`, `idlProof()`, `expectAnchorError()`, `validateClockAdvance()` |
+| `bankrun.ts` | `startTest()`, `warpClock()`, `bankrunNow()`, PDA helpers (bankrun variant) |
+| `time.ts` | `validatorNow()`, `createTimeHelpers()` |
 
-## Test Isolation
-
-**Important:** Integration tests create on-chain accounts that persist between runs. Always use `solana-test-validator --reset` for clean local runs.
-
-### Why No Cleanup?
-
-Anchor test accounts cannot easily be closed programmatically due to:
-- SOL rent exemption minimums
-- PDA-derived addresses that can't be closed without authority
-- Complex account interdependencies
-
-### Best Practices
-
-1. **Use `--reset` flag** when starting local validator
-2. **Run tests in isolation** for debugging: `anchor test -- --grep "T17"`
-3. **Skip expensive tests** locally: `anchor test -- --grep "^(?!T55)"` (skips 7-day grace test)
-
-## Writing New Tests
-
-### Test Structure
+### Writing Tests
 
 ```typescript
-describe("feature name", () => {
+// Standard test (uses local validator)
+describe("feature", () => {
   const { provider, program, creator, cancelAuthority, pauseAuthority } = setup();
 
   it("test name", async () => {
-    // 1. Setup (create accounts, fund)
-    // 2. Action (call instruction)
-    // 3. Assertion (verify state changes)
+    // 1. Setup  2. Action  3. Assertion
   });
 });
 ```
 
-### Helper Functions
-
-Use utilities from `tests/utils/helpers.ts`:
-
-- `createAndFundCampaign()` — Create + fund campaign in one call
-- `issueClaim()` — Execute claim with all boilerplate
-- `createTimeHelpers()` — Get validator's current timestamp
-- `validateClockAdvance()` — Verify setClock worked
-- `expectAnchorError()` — Assert specific error codes
-
-### Time-Based Tests
-
-For tests that depend on time passing:
+For time-dependent tests, use bankrun:
 
 ```typescript
-const t = await createTimeHelpers(provider.connection);
-const start = t.now;
-const end = t.now + 1000;
-const targetTimestamp = start + 250;
+import { startTest, warpClock, bankrunNow } from "./utils/bankrun";
 
-// Use validateClockAdvance for deterministic timing
-const clockValid = await validateClockAdvance(
-  provider,
-  targetTimestamp,
-  start,
-  90, // 90% threshold
-);
-if (!clockValid) {
-  this.skip();
-}
-
-// Proceed with test using targetTimestamp
+describe("clock test", () => {
+  let ctx = await startTest();
+  const now = await bankrunNow(ctx.context);
+  await warpClock(ctx.context, now + 250);
+  // ... test assertions
+});
 ```
 
-## Debugging Failed Tests
+## Test Isolation
 
-### Enable Logging
+Integration tests create on-chain accounts that persist between runs. Use `solana-test-validator --reset` for clean local runs.
+
+## Debugging
 
 ```bash
-RUST_LOG=anchor_lang::solana_program=info anchor test
+RUST_LOG=debug anchor test          # Enable program logging
+anchor test -- --grep "T17"         # Run single test
 ```
-
-### Inspect Accounts
-
-```bash
-# After test run, inspect account state
-solana account <PDA_ADDRESS> --url localhost
-```
-
-### Run Single Test
-
-```bash
-anchor test -- --grep "T17"
-```
-
-### Check Validator Logs
-
-Local validator logs show to stdout. Look for:
-- Program log outputs
-- CPI call traces
-- Error details
-
-## Known Test Issues
-
-### T19 — withdraw_unvested non-creator
-
-**Issue:** Expects `Unauthorized` (6005) but gets different error.
-
-**Status:** Pending investigation — may be error code mismatch in test assertion.
-
-### T48 — over-claim
-
-**Issue:** Expects `OverClaim` (6017) but gets different error code.
-
-**Status:** Pending investigation — may be error code mismatch in test assertion.
-
-### T55 — 7-day grace period
-
-**Issue:** Uses `setClock` to warp 7 days forward; skips without clock control.
-
-**Status:** Not a bug — test infrastructure limitation. Test validates correct logic when it runs.
-
-## CI/CD
-
-Tests run automatically on:
-
-- **Push to main/PR:** `.github/workflows/ci.yml`
-- **Manual trigger:** GitHub Actions UI
-
-CI runs `anchor build` + `anchor test` with cached dependencies.
-
-## Test Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total tests | 63 |
-| Passing (local) | 61 (97%) |
-| Known failures | 2 (error-code mismatches) |
-| Test code lines | 4,675 |
-| Helper utilities | 649 lines (385 test utils + 264 clock validation) |
