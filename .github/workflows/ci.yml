@@ -82,12 +82,7 @@ jobs:
 
       - name: Start local validator
         run: |
-          solana-test-validator \
-            --reset \
-            --quiet \
-            --bpf-program G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu target/deploy/vesting.so \
-            &
-          # Wait for validator to be ready
+          solana-test-validator --reset --quiet &
           for i in $(seq 1 30); do
             if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
               echo "Validator ready after ${i}s"
