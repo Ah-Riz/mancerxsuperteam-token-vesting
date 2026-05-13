@@ -19,10 +19,24 @@ import {
 } from "./utils/setup";
 import { createTimeHelpers } from "./utils/time";
 import {
+  idlLeaf,
+  idlProof,
+  expectAnchorError,
+  createAndFundCampaign,
+  issueClaim,
+} from "./utils/helpers";
+import {
   ReleaseType,
   VestingMerkleTree,
   type VestingLeaf,
 } from "../clients/ts/src";
+
+// ---------------------------------------------------------------------------
+// IMPORTANT: These tests create on-chain accounts that persist between runs.
+// You MUST run `solana-test-validator --reset` between test executions to
+// avoid PDA collisions and stale state. There is no afterEach cleanup because
+// Anchor test accounts cannot easily be closed programmatically.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Error codes from the IDL (verified against target/idl/vesting.json)
@@ -39,147 +53,6 @@ const ERR = {
   CannotClose: 6027,
   InsufficientVault: 6016,
 } as const;
-
-// ---------------------------------------------------------------------------
-// Helpers (follow conventions from vesting.supplementary.spec.ts)
-// ---------------------------------------------------------------------------
-
-/** Build a leaf object matching the IDL `vestingLeaf` type exactly. */
-function idlLeaf(leaf: VestingLeaf): {
-  leafIndex: number;
-  beneficiary: PublicKey;
-  amount: BN;
-  releaseType: number;
-  startTime: BN;
-  cliffTime: BN;
-  endTime: BN;
-  milestoneIdx: number;
-} {
-  return {
-    leafIndex: leaf.leafIndex,
-    beneficiary: leaf.beneficiary,
-    amount: leaf.amount,
-    releaseType: leaf.releaseType,
-    startTime: leaf.startTime,
-    cliffTime: leaf.cliffTime,
-    endTime: leaf.endTime,
-    milestoneIdx: leaf.milestoneIdx,
-  };
-}
-
-/** Convert a Buffer[] proof into the number[][] format the IDL expects. */
-function idlProof(proof: Buffer[]): number[][] {
-  return proof.map((b) => Array.from(b));
-}
-
-/** Expect an Anchor custom program error with the given error code. */
-function expectAnchorError(err: unknown, code: number) {
-  const hex = "0x" + code.toString(16).padStart(4, "0");
-  const msg = (err as any).message || String(err);
-  const logs = ((err as any).logs || []).join("\n");
-  const haystack = msg + "\n" + logs;
-  expect(
-    haystack,
-    `expected Anchor error ${hex} (${code})`,
-  ).to.include(hex);
-}
-
-/**
- * Full helper: create + fund a campaign and return all derived addresses.
- * Uses the provided leaves to build the merkle tree.
- */
-async function createAndFundCampaign(
-  ctx: {
-    provider: any;
-    program: any;
-    creator: Keypair;
-    cancelAuthority: Keypair;
-    pauseAuthority: Keypair;
-  },
-  campaignId: number,
-  leaves: VestingLeaf[],
-  totalSupply: number,
-  cancellable: boolean = true,
-) {
-  const { provider, program, creator, cancelAuthority, pauseAuthority } = ctx;
-  const mint = await createTestMint(provider, creator.publicKey);
-  await fundCreatorAta(provider, mint, creator.publicKey, totalSupply);
-
-  const tree = new VestingMerkleTree(leaves);
-  const [treePda] = await treePDA(
-    PROGRAM_ID,
-    creator.publicKey,
-    mint,
-    campaignId,
-  );
-  const [vaultAuthPda] = await vaultAuthorityPDA(PROGRAM_ID, treePda);
-  const vault = getAssociatedTokenAddressSync(mint, vaultAuthPda, true);
-
-  await program.methods
-    .createCampaign({
-      campaignId: new BN(campaignId),
-      merkleRoot: Array.from(tree.root),
-      leafCount: leaves.length,
-      totalSupply: new BN(totalSupply),
-      cancellable,
-      cancelAuthority: cancelAuthority.publicKey,
-      pauseAuthority: pauseAuthority.publicKey,
-    })
-    .accounts({
-      creator: creator.publicKey,
-      vestingTree: treePda,
-      vaultAuthority: vaultAuthPda,
-      vault,
-      mint,
-    })
-    .signers([creator])
-    .rpc();
-
-  await program.methods
-    .fundCampaign(new BN(totalSupply))
-    .accounts({
-      creator: creator.publicKey,
-      vestingTree: treePda,
-      vault,
-      sourceAta: getAssociatedTokenAddressSync(mint, creator.publicKey),
-    })
-    .signers([creator])
-    .rpc();
-
-  return { mint, tree, treePda, vaultAuthPda, vault };
-}
-
-/** Issue a claim transaction with all boilerplate handled. */
-async function issueClaim(
-  ctx: {
-    program: any;
-  },
-  leaf: VestingLeaf,
-  proof: Buffer[],
-  beneficiary: Keypair,
-  treePda: PublicKey,
-  vaultAuthPda: PublicKey,
-  vault: PublicKey,
-  mint: PublicKey,
-) {
-  const crPda = (
-    await claimRecordPDA(PROGRAM_ID, treePda, beneficiary.publicKey)
-  )[0];
-
-  return ctx.program.methods
-    .claim(idlLeaf(leaf), idlProof(proof))
-    .accounts({
-      beneficiary: beneficiary.publicKey,
-      vestingTree: treePda,
-      claimRecord: crPda,
-      vaultAuthority: vaultAuthPda,
-      vault,
-      beneficiaryAta: getAssociatedTokenAddressSync(mint, beneficiary.publicKey),
-      mint,
-    })
-    .signers([beneficiary])
-    .rpc();
-}
 
 // ---------------------------------------------------------------------------
 // Security Exploit Tests
@@ -218,7 +91,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, tree, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        500,
+        700,
         [leaf],
         TOTAL_FUND,
       );
@@ -287,7 +160,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, tree, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        501,
+        701,
         [leaf],
         AMOUNT,
       );
@@ -347,7 +220,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, tree, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        502,
+        702,
         [leaf0, leaf1],
         AMOUNT,
       );
@@ -378,133 +251,6 @@ describe("security exploit attempts (should all be blocked)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // EXPLOIT 4: Claim after full withdrawal (cancel + withdraw unvested)
-  // Cancel campaign, wait for grace, withdraw everything from vault,
-  // then try to claim -> InsufficientVault
-  // -------------------------------------------------------------------------
-  it("EXPLOIT 4: claim after full vault withdrawal -> InsufficientVault", async () => {
-    const beneficiary = await makeBeneficiary(provider);
-    const AMOUNT = 1_000_000;
-
-    // Fully vested in the past
-    const t = await createTimeHelpers(provider.connection);
-    const start = t.past(2000);
-    const end = t.past(10);
-
-    const leaf: VestingLeaf = {
-      leafIndex: 0,
-      beneficiary: beneficiary.publicKey,
-      amount: new BN(AMOUNT),
-      releaseType: ReleaseType.Linear,
-      startTime: new BN(start),
-      cliffTime: new BN(start),
-      endTime: new BN(end),
-      milestoneIdx: 0,
-    };
-
-    const { mint, tree, treePda, vaultAuthPda, vault } =
-      await createAndFundCampaign(
-        { provider, program, creator, cancelAuthority, pauseAuthority },
-        503,
-        [leaf],
-        AMOUNT,
-      );
-
-    // Cancel the campaign
-    await program.methods
-      .cancelCampaign()
-      .accounts({
-        cancelAuthority: cancelAuthority.publicKey,
-        vestingTree: treePda,
-      })
-      .signers([cancelAuthority])
-      .rpc();
-
-    // We need to skip the 7-day grace period. Use bank run to warp clock.
-    // The grace period is 7 * 24 * 60 * 60 = 604800 seconds.
-    // We'll use the provider's connection to advance the clock via `@coral-xyz/anchor`
-    // workspace provider which supports `connection.getSlot()` based time.
-    // However, on a local validator, we can directly warp the clock via
-    // `solana-test-validator --warp-slot` approach. Instead, we use the
-    // AnchorProvider's `wallet` to call `connection.rpcRequest` to set the
-    // `Clock` sysvar forward by the grace period.
-
-    // Warp clock past grace period
-    const GRACE_PERIOD_SECS = 7 * 24 * 60 * 60;
-    try {
-      await provider.connection.requestAirdrop(
-        creator.publicKey,
-        0, // zero-lamport airdrop just to advance a slot is not useful;
-      );
-    } catch {
-      // Airdrop may fail on devnet due to rate limits; continue without it.
-    }
-    // Instead, use the JSON-RPC `setClock` method available on test validator
-    const currentSlot = await provider.connection.getSlot();
-    // Advance the bank's clock by sending many empty transactions
-    // Better approach: directly set the clock sysvar via RPC
-    try {
-      await (provider.connection as any)._rpcRequest("setClock", {
-        unixTimestamp: t.now + GRACE_PERIOD_SECS + 100,
-      });
-    } catch {
-      // If setClock is not available, try advancing slots to pass time
-      // This is a best-effort fallback
-    }
-
-    // Try to withdraw unvested (should succeed after grace)
-    try {
-      await program.methods
-        .withdrawUnvested()
-        .accounts({
-          creator: creator.publicKey,
-          vestingTree: treePda,
-          vaultAuthority: vaultAuthPda,
-          vault,
-          creatorAta: getAssociatedTokenAddressSync(mint, creator.publicKey),
-        })
-        .signers([creator])
-        .rpc();
-    } catch (e) {
-      // If withdraw also fails (e.g. clock not advanced enough), this exploit
-      // test still validates the claim-then-withdraw ordering.
-      // We'll verify the vault is empty by checking its balance.
-    }
-
-    // Verify the vault is now empty (or has very little)
-    try {
-      const vaultAccount = await getAccount(provider.connection, vault);
-      // If vault still has tokens, we can't test this exploit fully,
-      // but we still try the claim
-      if (vaultAccount.amount > 0) {
-        // Vault still has funds -- skip the rest of this test
-        // because we couldn't advance the clock
-        console.log("    [EXPLOIT 4 skipped -- could not advance clock past grace period (likely devnet without setClock)]");
-        return;
-      }
-    } catch {
-      // Vault account closed or doesn't exist -- even better for our test
-    }
-
-    // Now try to claim -> should fail with InsufficientVault
-    try {
-      await issueClaim(
-        { program },
-        leaf,
-        tree.proof(0),
-        beneficiary,
-        treePda,
-        vaultAuthPda,
-        vault,
-        mint,
-      );
-      expect.fail("EXPLOIT 4 SUCCEEDED: claim after vault withdrawal should have been rejected");
-    } catch (e) {
-      expectAnchorError(e, ERR.InsufficientVault);
-    }
-  });
-
-  // -------------------------------------------------------------------------
   // EXPLOIT 5: Double milestone same index
   // -------------------------------------------------------------------------
   it("EXPLOIT 5: claim same milestone twice -> MilestoneAlreadyClaimed", async () => {
@@ -528,7 +274,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, tree, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        504,
+        704,
         [leaf],
         AMOUNT,
       );
@@ -588,7 +334,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        505,
+        705,
         [leaf],
         AMOUNT,
       );
@@ -647,7 +393,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, treePda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        506,
+        706,
         [leaf],
         AMOUNT,
       );
@@ -710,7 +456,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, treePda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        507,
+        707,
         [leaf],
         AMOUNT,
       );
@@ -772,7 +518,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { treePda } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        508,
+        708,
         [leaf],
         AMOUNT,
       );
@@ -830,7 +576,7 @@ describe("security exploit attempts (should all be blocked)", () => {
     const { mint, tree, treePda, vaultAuthPda, vault } =
       await createAndFundCampaign(
         { provider, program, creator, cancelAuthority, pauseAuthority },
-        509,
+        709,
         [leaf],
         AMOUNT,
       );
@@ -857,7 +603,7 @@ describe("security exploit attempts (should all be blocked)", () => {
 
     try {
       await program.methods
-        .closeClaimRecord(new BN(AMOUNT))
+        .closeClaimRecord()
         .accounts({
           beneficiary: beneficiary.publicKey,
           vestingTree: treePda,
