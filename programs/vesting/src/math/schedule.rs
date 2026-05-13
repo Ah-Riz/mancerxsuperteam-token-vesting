@@ -2,8 +2,8 @@ use crate::state::VestingLeaf;
 
 pub fn vested(leaf: &VestingLeaf, now: i64) -> u64 {
     match leaf.release_type {
-        0 | 2 if now >= leaf.cliff_time => leaf.amount,
-        0 | 2 => 0,
+        0 if now >= leaf.cliff_time => leaf.amount,
+        0 => 0,
         1 => {
             if now >= leaf.end_time {
                 return leaf.amount;
@@ -15,6 +15,8 @@ pub fn vested(leaf: &VestingLeaf, now: i64) -> u64 {
             let duration = (leaf.end_time - leaf.cliff_time) as u128;
             ((leaf.amount as u128 * elapsed) / duration) as u64
         }
+        2 if now >= leaf.cliff_time => leaf.amount,
+        2 => 0,
         _ => 0,
     }
 }

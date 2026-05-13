@@ -1,5 +1,5 @@
 {
-  "name": "mancer-vesting",
+  "name": "velthoryn",
   "private": true,
   "version": "0.0.0",
   "description": "Solana Merkle-compressed token vesting with per-recipient clawback",
@@ -27,6 +27,8 @@
     "chai": "^4.5.0",
     "js-sha3": "^0.9.3",
     "mocha": "^10.8.2",
+    "anchor-bankrun": "^0.5.0",
+    "solana-bankrun": "^0.4.0",
     "ts-mocha": "^11.1.0",
     "typescript": "^5.6.0"
   }

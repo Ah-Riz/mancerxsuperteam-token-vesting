@@ -9,6 +9,11 @@ pub struct UpdateRoot<'info> {
 
     #[account(
         mut,
+        seeds = [b"tree",
+                 vesting_tree.creator.as_ref(),
+                 vesting_tree.mint.as_ref(),
+                 &vesting_tree.campaign_id.to_le_bytes()],
+        bump = vesting_tree.bump,
         constraint = vesting_tree.cancellable @ VestingError::NotCancellable,
         constraint = vesting_tree.cancelled_at.is_none() @ VestingError::CampaignCancelled,
         constraint = vesting_tree.cancel_authority == Some(cancel_authority.key()) @ VestingError::Unauthorized,

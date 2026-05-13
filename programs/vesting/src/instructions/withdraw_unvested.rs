@@ -12,6 +12,11 @@ pub struct WithdrawUnvested<'info> {
 
     #[account(
         mut,
+        seeds = [b"tree",
+                 vesting_tree.creator.as_ref(),
+                 vesting_tree.mint.as_ref(),
+                 &vesting_tree.campaign_id.to_le_bytes()],
+        bump = vesting_tree.bump,
         has_one = creator @ VestingError::Unauthorized,
         has_one = vault @ VestingError::WrongVault,
         constraint = vesting_tree.cancelled_at.is_some() @ VestingError::NotCancelled,
@@ -41,8 +46,9 @@ pub fn handler(ctx: Context<WithdrawUnvested>) -> Result<()> {
         .vesting_tree
         .cancelled_at
         .ok_or(VestingError::NotCancelled)?;
+    let grace_end = cancelled.checked_add(GRACE_PERIOD_SECS).ok_or(VestingError::Overflow)?;
     require!(
-        Clock::get()?.unix_timestamp >= cancelled + GRACE_PERIOD_SECS,
+        Clock::get()?.unix_timestamp >= grace_end,
         VestingError::GracePeriodActive
     );
 

@@ -50,3 +50,4 @@ Thumbs.db
 *.swo
 # Playwright MCP
 .playwright-mcp/
+.mcp.json
