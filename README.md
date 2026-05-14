@@ -15,6 +15,7 @@ velthoryn/
 ├── apps/web/           # Frontend dApp + Merkle tooling      — owner: Geral
 ├── tests/              # ts-mocha integration tests
 ├── .github/workflows/  # CI: anchor build + anchor test + lint
+├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── Anchor.toml
 ├── Cargo.toml
 ├── package.json
@@ -26,6 +27,7 @@ velthoryn/
 | Area                | Owner | Notes                                       |
 | ------------------- | ----- | ------------------------------------------- |
 | `programs/vesting/` | Lana  | Anchor program, instructions, state, math   |
+| `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
 | `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
 | Root configs, CI    | Joint | Workspace files, GitHub Actions             |
 
@@ -50,6 +52,7 @@ velthoryn/
 | `pause_campaign`     | Temporarily block claims.                                         |
 | `unpause_campaign`   | Resume a paused campaign.                                         |
 | `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
+| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
 | `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
 
 For deeper reads:

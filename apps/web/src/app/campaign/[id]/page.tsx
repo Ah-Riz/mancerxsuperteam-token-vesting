@@ -231,7 +231,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             <InfoRow label="Created" value={formatDate(treeState.createdAt.toNumber())} />
             <InfoRow label="Status" value={
               treeState.paused ? "Paused" :
-              treeState.cancelledAt ? "Cancelled" : "Active"
+                treeState.cancelledAt ? "Cancelled" : "Active"
             } />
           </div>
 

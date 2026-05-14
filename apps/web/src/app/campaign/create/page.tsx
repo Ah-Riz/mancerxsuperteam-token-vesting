@@ -195,11 +195,10 @@ export default function CreateStreamPage() {
                   key={rt.value}
                   type="button"
                   onClick={() => setReleaseType(rt.value)}
-                  className={`p-3 rounded-lg border text-left transition ${
-                    releaseType === rt.value
+                  className={`p-3 rounded-lg border text-left transition ${releaseType === rt.value
                       ? "border-purple-500 bg-purple-500/10"
                       : "border-gray-700 hover:border-gray-500"
-                  }`}
+                    }`}
                 >
                   <div className="font-medium">{rt.label}</div>
                   <div className="text-xs text-gray-400 mt-1">{rt.desc}</div>

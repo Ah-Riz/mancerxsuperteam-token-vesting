@@ -13,6 +13,13 @@ Audience: Geral and anyone building against the on-chain program from TypeScript
 | Generated TS types       | `target/types/vesting.ts` (Anchor 1.0 emits this alongside the IDL)           |
 | Merkle helpers (live)    | `apps/web/src/lib/merkle/builder.ts` — `encodeLeaf`, `hashLeaf`, `buildTree`, `getRoot`, `getProof` |
 | Frontend scaffold        | `apps/web/` — Next.js 15 App Router, routes: `/`, `/campaign/create`, `/campaign/[id]` |
+| Thing                    | Where                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| Program ID               | `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`                                |
+| IDL (after `anchor build`) | `target/idl/vesting.json`                                                    |
+| Generated TS types       | `target/types/vesting.ts` (Anchor 1.0 emits this alongside the IDL)           |
+| Merkle helpers (live)    | `apps/web/src/lib/merkle/builder.ts` — `encodeLeaf`, `hashLeaf`, `buildTree`, `getRoot`, `getProof` |
+| Frontend scaffold        | `apps/web/` — Next.js 15 App Router, routes: `/`, `/campaign/create`, `/campaign/[id]` |
 
 ## Setup
 
@@ -22,6 +29,7 @@ cd mancerxsuperteam-token-vesting  # repo retains original name
 git checkout dev_lana      # Active development branch
 pnpm install
 anchor build               # produces target/idl/vesting.json + target/types/vesting.ts
+anchor build               # produces target/idl/vesting.json + target/types/vesting.ts
 ```
 
 ## Connecting from the dApp
@@ -29,6 +37,8 @@ anchor build               # produces target/idl/vesting.json + target/types/ves
 ```ts
 import * as anchor from "@coral-xyz/anchor";
 import { Connection, PublicKey } from "@solana/web3.js";
+import idl from "../../target/idl/vesting.json";
+import type { Vesting } from "../../target/types/vesting";
 import idl from "../../target/idl/vesting.json";
 import type { Vesting } from "../../target/types/vesting";
 
@@ -44,8 +54,10 @@ The IDL exposes camelCase instruction names: `createCampaign`, `createStream`, `
 ## PDA derivations
 
 Every account the program reads/writes is a PDA. Compute them with `PublicKey.findProgramAddressSync`:
+Every account the program reads/writes is a PDA. Compute them with `PublicKey.findProgramAddressSync`:
 
 ```ts
+import { derivePda, PROGRAM_ID } from "@/lib/anchor/client";
 import { derivePda, PROGRAM_ID } from "@/lib/anchor/client";
 
 // VestingTree (one per campaign)
@@ -55,16 +67,26 @@ const [vestingTree] = derivePda([
   mint.toBuffer(),
   new anchor.BN(campaignId).toArrayLike(Buffer, "le", 8),
 ]);
+const [vestingTree] = derivePda([
+  "tree",
+  creator.toBuffer(),
+  mint.toBuffer(),
+  new anchor.BN(campaignId).toArrayLike(Buffer, "le", 8),
+]);
 
 // Vault authority (signs token transfers out of the vault)
+const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
 const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
 
 // ClaimRecord (one per (campaign, beneficiary))
 const [claimRecord] = derivePda(["claim", vestingTree.toBuffer(), beneficiary.toBuffer()]);
+const [claimRecord] = derivePda(["claim", vestingTree.toBuffer(), beneficiary.toBuffer()]);
 ```
 
 The vault itself is the ATA of `(mint, vaultAuthority)`. Use `getAssociatedTokenAddressSync` from `@solana/spl-token`.
+The vault itself is the ATA of `(mint, vaultAuthority)`. Use `getAssociatedTokenAddressSync` from `@solana/spl-token`.
 
+## Calling instructions
 ## Calling instructions
 
 All instructions are fully implemented and write state on-chain. The constraint blocks and account lists are final — see `programs/vesting/src/instructions/<name>.rs` for the full details.
@@ -76,12 +98,14 @@ await program.methods
   .createCampaign({
     campaignId: new anchor.BN(1),
     merkleRoot: Array.from(root),           // Buffer from buildTree → getRoot
+    merkleRoot: Array.from(root),           // Buffer from buildTree → getRoot
     leafCount: recipients.length,
     totalSupply: new anchor.BN(amountTotal),
     cancellable: true,
     cancelAuthority: cancelAuthorityKey,    // PublicKey | null
     pauseAuthority: pauseAuthorityKey,      // PublicKey | null
   })
+  .accounts({ creator: provider.wallet.publicKey, mint })
   .accounts({ creator: provider.wallet.publicKey, mint })
   .rpc();
 ```
@@ -92,12 +116,18 @@ await program.methods
 await program.methods
   .claim(leaf, proof)   // VestingLeaf object + [[u8; 32], …]
   .accounts({ beneficiary: wallet.publicKey, mint })
+  .claim(leaf, proof)   // VestingLeaf object + [[u8; 32], …]
+  .accounts({ beneficiary: wallet.publicKey, mint })
   .rpc();
 ```
 
 ### Cancel a campaign (cancel authority)
 
 ```ts
+await program.methods
+  .cancelCampaign()
+  .accounts({ authority: cancelAuthorityWallet.publicKey })
+  .rpc();
 await program.methods
   .cancelCampaign()
   .accounts({ authority: cancelAuthorityWallet.publicKey })
@@ -230,6 +260,11 @@ Subscribe via `program.addEventListener("Claimed", (event, slot) => …)`. Avail
 `CampaignCreated`, `CampaignFunded`, `Claimed`, `CampaignCancelled`, `RootUpdated`, `UnvestedWithdrawn`, `CampaignPaused`, `CampaignUnpaused`, `ClaimRecordClosed`.
 
 Field shapes in `programs/vesting/src/events.rs`.
+Subscribe via `program.addEventListener("Claimed", (event, slot) => …)`. Available events:
+
+`CampaignCreated`, `CampaignFunded`, `Claimed`, `CampaignCancelled`, `RootUpdated`, `UnvestedWithdrawn`, `CampaignPaused`, `CampaignUnpaused`, `ClaimRecordClosed`.
+
+Field shapes in `programs/vesting/src/events.rs`.
 
 ## Devnet
 
@@ -265,6 +300,10 @@ Run with `npx vitest run` from `apps/web/`.
 
 ## Where to ask
 
+- On-chain bugs / instruction questions → Lana (`programs/vesting/`).
+- Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
+- Frontend / UI questions → Geral (`apps/web/`).
+- IDL / TS types regen → re-run `anchor build`.
 - On-chain bugs / instruction questions → Lana (`programs/vesting/`).
 - Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
 - Frontend / UI questions → Geral (`apps/web/`).

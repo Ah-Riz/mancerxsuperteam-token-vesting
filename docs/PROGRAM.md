@@ -1,4 +1,5 @@
 # Vesting Program — Internals
+# Vesting Program — Internals
 
 This document describes the on-chain program at `programs/vesting/`. All instructions and math modules are **LIVE** and fully implemented.
 
@@ -108,7 +109,18 @@ Not an account — lives off-chain inside the Merkle tree, gets passed in to `cl
 | `cliff_time`    | `i64`    | 53     | |
 | `end_time`      | `i64`    | 61     | |
 | `milestone_idx` | `u8`     | 69     | |
+| Field           | Type     | Offset | Notes |
+| --------------- | -------- | ------ | ----- |
+| `leaf_index`    | `u32`    | 0      | |
+| `beneficiary`   | `Pubkey` | 4      | |
+| `amount`        | `u64`    | 36     | |
+| `release_type`  | `u8`     | 44     | `0 = Cliff`, `1 = Linear`, `2 = Milestone` |
+| `start_time`    | `i64`    | 45     | |
+| `cliff_time`    | `i64`    | 53     | |
+| `end_time`      | `i64`    | 61     | |
+| `milestone_idx` | `u8`     | 69     | |
 
+Total: **70 bytes** Borsh LE. **Field order is the wire order** — the TS encoder must serialize bytes identically or every claim fails proof verification. Golden-vector test in `apps/web/` gates byte equality between Rust and TS.
 Total: **70 bytes** Borsh LE. **Field order is the wire order** — the TS encoder must serialize bytes identically or every claim fails proof verification. Golden-vector test in `apps/web/` gates byte equality between Rust and TS.
 
 ## Errors
