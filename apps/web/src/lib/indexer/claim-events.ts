@@ -50,7 +50,7 @@ export function parseClaimedEvent(data: Buffer): ParsedClaimedEvent | null {
   };
 }
 
-function extractAnchorEventData(logs: string[]): Buffer[] {
+export function extractAnchorEventData(logs: string[]): Buffer[] {
   const events: Buffer[] = [];
   for (const line of logs) {
     const prefix = "Program data: ";
