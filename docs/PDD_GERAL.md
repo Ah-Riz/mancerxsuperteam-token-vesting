@@ -1,4 +1,4 @@
-# PDD — Mancer Vesting Frontend Design (Geral's Scope)
+# PDD — Velthoryn Vesting Frontend Design (Geral's Scope)
 
 **Author:** Geral — frontend lead  
 **Status:** Week 4 design, Week 6 implementation target  
@@ -8,7 +8,7 @@
 
 ## §1 Executive Summary
 
-The frontend transforms the Mancer Vesting protocol from a developer-only Solana program into a usable product. Three user types (Creator, Recipient, Admin) interact with the same Next.js 15 dApp through different page routes.
+The frontend transforms the Velthoryn Vesting protocol from a developer-only Solana program into a usable product. Three user types (Creator, Recipient, Admin) interact with the same Next.js 15 dApp through different page routes.
 
 ### Design goals
 
@@ -648,14 +648,14 @@ Recipient connects wallet
 | EventFeed | `components/EventFeed.tsx` | P1 |
 | AdminPanel | `components/AdminPanel.tsx` | P2 |
 
-### Known issues to fix
+### Resolved issues (Week 4)
 
-| Issue | File | Fix |
-|---|---|---|
-| PROGRAM_ID wrong (`7mGET6...`) | `lib/anchor/client.ts:13` | Change to `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` |
-| IDL import commented out | `lib/anchor/client.ts:9` | Uncomment after `anchor build` |
-| useVestingProgram returns null | `hooks/useVestingProgram.ts:14-16` | Wire up with AnchorProvider + IDL |
-| No `.env.example` | project root | Add `NEXT_PUBLIC_RPC_ENDPOINT=https://api.devnet.solana.com` |
+| Issue | Resolution |
+|---|---|
+| PROGRAM_ID was `7mGET6...` | ✅ Fixed — `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` |
+| IDL import commented out | ✅ Fixed — wired with Anchor IDL |
+| useVestingProgram returned null | ✅ Fixed — connected to AnchorProvider + IDL |
+| Hydration mismatch (wallet button) | ✅ Fixed — `dynamic(() => import(...), { ssr: false })` |
 
 ---
 

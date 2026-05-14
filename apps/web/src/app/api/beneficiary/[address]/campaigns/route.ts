@@ -16,6 +16,13 @@ export async function GET(
   try {
     const { address } = await params;
 
+    if (!address || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) {
+      return NextResponse.json(
+        { error: "Invalid address" },
+        { status: 400 },
+      );
+    }
+
     // Use a raw SQL CTE approach for efficiency:
     // 1. Find the latest root version per campaign
     // 2. Join with leaves for this beneficiary
