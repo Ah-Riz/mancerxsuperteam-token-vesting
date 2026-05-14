@@ -43,3 +43,13 @@ jobs:
 
       - name: Next.js lint
         run: cd apps/web && pnpm lint
+
+      - name: Vitest
+        run: cd apps/web && pnpm test
+
+      - name: Next.js build
+        run: cd apps/web && pnpm build
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+          NEXT_PUBLIC_RPC_ENDPOINT: "https://api.devnet.solana.com"
+          ADMIN_API_KEY: "ci-test-key"
