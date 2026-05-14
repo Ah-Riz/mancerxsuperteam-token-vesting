@@ -9,6 +9,11 @@ pub struct PauseCampaign<'info> {
 
     #[account(
         mut,
+        seeds = [b"tree",
+                 vesting_tree.creator.as_ref(),
+                 vesting_tree.mint.as_ref(),
+                 &vesting_tree.campaign_id.to_le_bytes()],
+        bump = vesting_tree.bump,
         constraint = vesting_tree.pause_authority.is_some() @ VestingError::NotPausable,
         constraint = vesting_tree.pause_authority == Some(pause_authority.key()) @ VestingError::Unauthorized,
         constraint = vesting_tree.cancelled_at.is_none() @ VestingError::CampaignCancelled,

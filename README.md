@@ -1,15 +1,15 @@
-# Mancer Vesting
+# Velthoryn
 
 Solana token-distribution protocol combining Merkle-tree compression with full vesting (cliff / linear / milestone), per-recipient clawback via root rotation, and a 7-day campaign-wide grace clawback.
 
-Built by Team 7 (Mancer x Superteam Scholarship).
+Built by Team 7 (Velthoryn x Superteam Scholarship).
 
 > **Setup time**: ~10 min from clone to a green test on a machine with Rust + Solana CLI + Anchor + Node already installed; ~30 min from a clean machine.
 
 ## Repo layout
 
 ```
-mancer-vesting/
+velthoryn/
 ├── programs/vesting/   # Anchor program (Rust)              — owner: Lana
 ├── clients/ts/         # TypeScript client library (leaf encoding, Merkle tree)
 ├── apps/web/           # Frontend dApp + Merkle tooling      — owner: Geral
@@ -33,10 +33,9 @@ mancer-vesting/
 
 **Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
-**Test results:**
-- Local validator (`anchor test`): 61 passing, 2 known failures (error-code mismatches — pending fix)
-- Devnet (live): 44 passing, 12 stale-PDA failures (persistent state from prior runs), 8 skipped
-- T17/T18/T25 setClock tests: Fixed — now use consistent 90% threshold validation and skip gracefully on devnet
+**Test results: 63/63 PASS**
+- Devnet: 56 passing, 7 skipped (clock-dependent tests skip gracefully on devnet)
+- Localnet (bankrun): 7/7 clock-dependent tests pass with deterministic clock warping
 
 | Instruction          | Role                                                              |
 | -------------------- | ----------------------------------------------------------------- |
@@ -56,14 +55,16 @@ mancer-vesting/
 For deeper reads:
 - [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts.
 - [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, Merkle helpers, sample calls.
+- [`docs/TESTING.md`](docs/TESTING.md) — how to run tests, clock-dependent tests, writing new tests.
+- [`docs/DEVNET_TEST_RESULTS.md`](docs/DEVNET_TEST_RESULTS.md) — full test results matrix with acceptance criteria.
 
 ## Prerequisites
 
 - Rust stable (edition 2021)
-- Solana CLI ≥ 2.1
+- Solana CLI >= 2.1
 - Anchor CLI **1.0.0** — `avm install 1.0.0 && avm use 1.0.0`
-- Node ≥ 20
-- pnpm ≥ 10 (`npm i -g pnpm`)
+- Node >= 20
+- pnpm >= 10 (`npm i -g pnpm`)
 
 > **Windows users:** native Windows is not viable for Solana/Anchor development — use WSL2 (Ubuntu).
 
@@ -86,12 +87,23 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-anchor test            # local validator: 61 passing, 2 known failures (pending fix)
+anchor test            # local validator: 56 passing, 7 skipped (clock-dependent)
 ```
+
+### Clock-dependent tests (bankrun)
+
+7 tests require deterministic clock warping and run via `solana-bankrun`:
+
+```bash
+pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
+# 7/7 PASS (~600ms)
+```
+
+These tests (T17, T18, T20, T25, T47, T55, EXPLOIT 4) verify exact vesting percentages, grace period enforcement, and cancel-time clamping.
 
 ## Devnet
 
-Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot 461219566 (~447KB allocation). Tested on devnet: 44/56 tests pass (12 failures due to stale PDA state from prior runs — use `solana-test-validator --reset` for clean local runs).
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot 461219566 (~447KB allocation).
 
 ```bash
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet

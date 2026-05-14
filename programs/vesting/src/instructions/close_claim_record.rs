@@ -22,13 +22,16 @@ pub struct CloseClaimRecord<'info> {
     pub claim_record: Account<'info, crate::state::ClaimRecord>,
 }
 
-pub fn handler(ctx: Context<CloseClaimRecord>, expected_total: u64) -> Result<()> {
+pub fn handler(ctx: Context<CloseClaimRecord>) -> Result<()> {
     let cr = &ctx.accounts.claim_record;
     let tree = &ctx.accounts.vesting_tree;
 
-    let fully_claimed = cr.claimed_amount >= expected_total;
+    let fully_claimed = cr.claimed_amount >= cr.total_entitled;
     let post_grace = match tree.cancelled_at {
-        Some(c) => Clock::get()?.unix_timestamp >= c + GRACE_PERIOD_SECS,
+        Some(c) => {
+            let grace_end = c.checked_add(GRACE_PERIOD_SECS).ok_or(VestingError::Overflow)?;
+            Clock::get()?.unix_timestamp >= grace_end
+        }
         None => false,
     };
     require!(fully_claimed || post_grace, VestingError::CannotClose);
