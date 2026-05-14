@@ -1,8 +1,8 @@
-# PRD — Mancer Vesting Protocol (Lana's Scope)
+# PRD — Velthoryn Protocol (Lana's Scope)
 
 **Author:** Lana — smart-contract / backend lead  
-**Status:** Week 4 implementation target  
-**Program ID:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (deployed, Solana devnet, slot 460511260)  
+**Status:** Week 4 complete — all features implemented and tested on devnet
+**Program ID:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (deployed, Solana devnet)
 **Companion docs:** `docs/TDD_LANA.md`, `docs/SECURITY.md`, `docs/PROGRAM.md`
 
 ---
@@ -38,9 +38,9 @@ Every Solana vesting protocol except Jito's distributor charges a storage fee pe
 | Bonfida | 1 PDA per recipient | ~$0.20 | ~$1,990 |
 | Armada | 1 PDA per grant + option token | ~$0.20–$0.43 | ~$1,990–$4,250 |
 | **Jito Distributor** | **1 Merkle root for the whole campaign** | **~$0 marginal** | **~$0.20 total** |
-| **Mancer (this protocol)** | **1 Merkle root + 1 vault PDA** | **~$0 marginal** | **~$0.42 total** |
+| **Velthoryn (this protocol)** | **1 Merkle root + 1 vault PDA** | **~$0 marginal** | **~$0.42 total** |
 
-Mancer's creator-side cost is fixed at ~0.005 SOL:
+Velthoryn's creator-side cost is fixed at ~0.005 SOL:
 - `VestingTree` PDA (8 + 282 bytes): ~0.0029 SOL
 - Vault ATA (165 bytes): ~0.00204 SOL
 - Total: ~0.005 SOL = ~$0.42 at $85/SOL — independent of recipient count
@@ -49,7 +49,7 @@ Mancer's creator-side cost is fixed at ~0.005 SOL:
 
 Jito's distributor is the only other Merkle-compressed distribution protocol on Solana. It is the reference for our cost model. But it is explicitly a one-shot airdrop primitive:
 
-| Capability | Jito Distributor | Mancer |
+| Capability | Jito Distributor | Velthoryn |
 |---|---|---|
 | Merkle compression (flat cost) | Yes | Yes |
 | Cliff vesting | Yes (single window) | Yes (per leaf) |
@@ -63,7 +63,7 @@ Jito's distributor is the only other Merkle-compressed distribution protocol on 
 | **Frontend / UI** | **No (CLI only)** | **Yes (Geral's track)** |
 | **DeFi composability via `get_vested_amount` CPI** | **No** | **Yes (Phase 2)** |
 
-What Mancer adds on top of Jito: milestone support, per-leaf heterogeneous schedules, multi-campaign from one creator, per-recipient clawback via root rotation, campaign-wide cancel with grace period, emergency pause, and a full event surface for indexer-driven dashboards.
+What Velthoryn adds on top of Jito: milestone support, per-leaf heterogeneous schedules, multi-campaign from one creator, per-recipient clawback via root rotation, campaign-wide cancel with grace period, emergency pause, and a full event surface for indexer-driven dashboards.
 
 ### 1.3 Locked tokens sit as dead capital (Gap 2 — Phase 2 mandate)
 
@@ -84,7 +84,7 @@ Across all six surveyed protocols (Streamflow, Zebec, Magna, Bonfida, Armada, Ji
 
 | Layer | Deliverable | Owner | Phase |
 |---|---|---|---|
-| Smart contract — 10 Anchor instructions | `programs/vesting/src/instructions/` | Lana | Phase 1 (Week 4) |
+| Smart contract — 12 Anchor instructions | `programs/vesting/src/instructions/` | Lana | Phase 1 (Week 4) |
 | Schedule math (Cliff / Linear / Milestone) | `programs/vesting/src/math/schedule.rs` | Lana | Phase 1 |
 | Merkle verifier (`leaf_hash`, `verify_merkle_proof`) | `programs/vesting/src/math/merkle.rs` | Lana | Phase 1 |
 | TS Merkle tooling (leaf encoder, tree builder, proof generator) | `clients/ts/src/` | Lana | Phase 1 |
@@ -98,23 +98,24 @@ Across all six surveyed protocols (Streamflow, Zebec, Magna, Bonfida, Armada, Ji
 | DeFi composability (lending, vesting vouchers) | Lana + partners | Phase 2/3 |
 | DAO governance integration (Realms VSR) | Lana + Realms team | Phase 3 |
 
-### 2.2 Current implementation status (Week 3 handoff)
+### 2.2 Current implementation status
 
-The program compiles and is deployed to devnet. All 10 instruction stubs exist but return `Ok(())`.
+All features are implemented and tested. 57 tests pass on devnet (56 pass + 1 graceful skip).
 
 | File / function | Status |
 |---|---|
 | `math/merkle.rs::leaf_hash` | **LIVE** — keccak256 with `LEAF_PREFIX = 0x00`; byte-identical to Geral's `hashLeaf()` in `apps/web/` |
-| `math/merkle.rs::verify_merkle_proof` | **STUB** — always returns `false` |
-| `math/schedule.rs::vested` | **STUB** — always returns `0` |
-| `math/schedule.rs::get_vested_amount` | **STUB** — always returns `0` |
-| All 10 instruction handlers | **STUB** — all return `Ok(())` |
+| `math/merkle.rs::verify_merkle_proof` | **LIVE** — full proof verification with domain-separated node hashes |
+| `math/schedule.rs::vested` | **LIVE** — cliff, linear (u128 intermediate), milestone |
+| `math/schedule.rs::get_vested_amount` | **LIVE** — cancel-clamp via `effective_now = min(now, cancelled_at)` |
+| All 12 instruction handlers | **LIVE** — full validation, state mutations, events, SPL CPIs |
+| `create_stream` handler | **LIVE** — atomic single-recipient campaign creation + funding |
+| `withdraw` handler | **LIVE** — proof-less claim for single-recipient streams |
 | `VestingTree`, `ClaimRecord`, `VestingLeaf` structs | **LIVE** — correct field layout, correct Borsh wire order |
-| `VestingError` (30 variants) | **LIVE** |
-| 9 event types | **LIVE** (in IDL) |
+| `VestingError` (31 variants) | **LIVE** — all variants exercised by named tests |
+| 9 event types | **LIVE** — emitted after state mutations in each instruction |
 | Devnet deploy | **LIVE** at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` |
-
-Week 4 replaces every stub with the real implementation from `week3/OPENCLAW_BRIEF.md §6`.
+| Integration tests (50) | **LIVE** — T1-T5 core, T6-T25 supplementary, golden vector, 10 security exploit tests |
 
 ---
 
@@ -261,7 +262,7 @@ All ACs are machine-checkable. ACs are divided into Week 4 must-pass and stretch
 | AC | Pre-condition | Verification | Expected on failure |
 |---|---|---|---|
 | AC1 | Rust toolchain installed | `cargo test --manifest-path programs/vesting/Cargo.toml` exits 0 | Compile error or assertion failure in `schedule.rs` tests |
-| AC2 | `anchor build` exits 0 | IDL has 10 instructions + 2 account types + 9 events + `SameRoot` error | Missing field in IDL |
+| AC2 | `anchor build` exits 0 | IDL has 12 instructions + 2 account types + 9 events + `SameRoot` + `NotSingleStream` errors | Missing field in IDL |
 | AC3 | Campaign created + funded; beneficiary on linear leaf ~50% through window | T1 in `anchor test` — transferred amount ±5% of expected | Token balance outside band |
 | AC4 | Campaign created + funded; 2+ beneficiaries | T2 — flip one proof byte → must fail `VestingError::InvalidProof` | Silent pass = critical bug |
 | AC5 | Campaign with `pause_authority` set | T3 — pause blocks claim with `VestingError::CampaignPaused`; unpause restores | Wrong error or no error during pause |

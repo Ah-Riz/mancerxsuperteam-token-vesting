@@ -1,18 +1,20 @@
-# Mancer Vesting
+# Velthoryn
 
 Solana token-distribution protocol combining Merkle-tree compression with full vesting (cliff / linear / milestone), per-recipient clawback via root rotation, and a 7-day campaign-wide grace clawback.
 
-Built by Team 7 (Mancer x Superteam Scholarship).
+Built by Team 7 (Velthoryn x Superteam Scholarship).
 
 > **Setup time**: ~10 min from clone to a green test on a machine with Rust + Solana CLI + Anchor + Node already installed; ~30 min from a clean machine.
 
 ## Repo layout
 
 ```
-mancer-vesting/
+velthoryn/
 ├── programs/vesting/   # Anchor program (Rust)              — owner: Lana
+├── clients/ts/         # TypeScript client library (leaf encoding, Merkle tree)
 ├── apps/web/           # Frontend dApp + Merkle tooling      — owner: Geral
 ├── tests/              # ts-mocha integration tests
+├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── Anchor.toml
 ├── Cargo.toml
@@ -26,17 +28,24 @@ mancer-vesting/
 | ------------------- | ----- | ------------------------------------------- |
 | `programs/vesting/` | Lana  | Anchor program, instructions, state, math   |
 | `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
+| `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
 | Root configs, CI    | Joint | Workspace files, GitHub Actions             |
 
 ## Current status
 
-**10 instruction entry points** matching the Week 2 architecture — all compile, handlers are stubs (`Ok(())`). State structs, error codes, and events are fully defined. `leaf_hash()` is live and byte-verified against the TS encoder. Real instruction logic lands Week 4.
+**Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
+
+**Test results: 63/63 PASS**
+- Devnet: 56 passing, 7 skipped (clock-dependent tests skip gracefully on devnet)
+- Localnet (bankrun): 7/7 clock-dependent tests pass with deterministic clock warping
 
 | Instruction          | Role                                                              |
 | -------------------- | ----------------------------------------------------------------- |
 | `create_campaign`    | Initialize a vesting tree (Merkle root, supply, authorities).     |
+| `create_stream`      | Atomic single-recipient campaign creation + funding in one tx.    |
 | `fund_campaign`      | Creator deposits SPL tokens into the campaign vault.              |
 | `claim`              | Recipient claims vested portion against a Merkle proof.           |
+| `withdraw`           | Simplified claim for single-recipient streams (no Merkle proof).  |
 | `cancel_campaign`    | Cancel authority freezes the curve and starts a 7-day grace.      |
 | `update_root`        | Rotate the Merkle root to add/remove/adjust recipients.           |
 | `withdraw_unvested`  | Creator sweeps unvested tokens after the grace window.            |
@@ -44,18 +53,21 @@ mancer-vesting/
 | `unpause_campaign`   | Resume a paused campaign.                                         |
 | `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
 | `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
+| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
 
 For deeper reads:
-- [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts, what's live vs stub.
+- [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts.
 - [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, Merkle helpers, sample calls.
+- [`docs/TESTING.md`](docs/TESTING.md) — how to run tests, clock-dependent tests, writing new tests.
+- [`docs/DEVNET_TEST_RESULTS.md`](docs/DEVNET_TEST_RESULTS.md) — full test results matrix with acceptance criteria.
 
 ## Prerequisites
 
 - Rust stable (edition 2021)
-- Solana CLI ≥ 2.1
+- Solana CLI >= 2.1
 - Anchor CLI **1.0.0** — `avm install 1.0.0 && avm use 1.0.0`
-- Node ≥ 20
-- pnpm ≥ 10 (`npm i -g pnpm`)
+- Node >= 20
+- pnpm >= 10 (`npm i -g pnpm`)
 
 > **Windows users:** native Windows is not viable for Solana/Anchor development — use WSL2 (Ubuntu).
 
@@ -64,7 +76,7 @@ For deeper reads:
 ```bash
 git clone https://github.com/Ah-Riz/mancerxsuperteam-token-vesting.git
 cd mancerxsuperteam-token-vesting
-git checkout test      # Week 3 work — not yet merged to main
+git checkout test      # Integration branch (merged from dev_lana + dev_geral)
 pnpm install
 ```
 
@@ -78,12 +90,42 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-anchor test            # expected: 3 passing
+anchor test            # local validator: 56 passing, 7 skipped (clock-dependent)
 ```
+
+### Clock-dependent tests (bankrun)
+
+7 tests require deterministic clock warping and run via `solana-bankrun`:
+
+```bash
+pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
+# 7/7 PASS (~600ms)
+```
+
+These tests (T17, T18, T20, T25, T47, T55, EXPLOIT 4) verify exact vesting percentages, grace period enforcement, and cancel-time clamping.
+
+## Frontend (apps/web)
+
+Next.js 15 dApp with wallet integration, vesting stream creation, and token claiming.
+
+```bash
+cd apps/web
+pnpm dev               # http://localhost:3000
+pnpm test              # 38 Vitest tests (vesting math, PDA derivation, Merkle)
+```
+
+Routes:
+- `/` — Landing page
+- `/campaign/create` — Create a vesting stream (calls `createStream`)
+- `/campaign/[treeAddress]` — View stream & claim tokens (calls `withdraw`)
+
+Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). Set `NEXT_PUBLIC_RPC_ENDPOINT` to override the default devnet RPC.
+
+Frontend docs: [`docs/PRD_GERAL.md`](docs/PRD_GERAL.md), [`docs/PDD_GERAL.md`](docs/PDD_GERAL.md), [`docs/TDD_GERAL.md`](docs/TDD_GERAL.md), [`docs/SECURITY_GERAL.md`](docs/SECURITY_GERAL.md).
 
 ## Devnet
 
-Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (slot 460511260).
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot 461219566 (~447KB allocation).
 
 ```bash
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet
@@ -99,8 +141,8 @@ anchor deploy --provider.cluster devnet
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` + `anchor test` on every push and PR.
-`.github/workflows/lint.yml` runs `cargo clippy` separately (no merge conflict with ci.yml).
+`.github/workflows/ci.yml` runs `anchor build` + `anchor test` (local validator) on every push and PR.
+`.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
 
 ## License
 

@@ -4,7 +4,7 @@ import { WalletProvider } from "@/components/providers/WalletProvider";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 
 export const metadata: Metadata = {
-  title: "Mancer Vesting",
+  title: "Velthoryn",
   description: "Merkle-compressed token vesting on Solana",
 };
 
@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body suppressHydrationWarning>
         <QueryProvider>
           <WalletProvider>{children}</WalletProvider>
         </QueryProvider>

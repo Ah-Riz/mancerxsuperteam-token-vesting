@@ -2,9 +2,9 @@ name: Lint
 
 on:
   push:
-    branches: [main, dev_geral]
+    branches-ignore: [main, test]
   pull_request:
-    branches: [main]
+    branches: [main, test]
 
 jobs:
   lint:
@@ -33,3 +33,25 @@ jobs:
           -A unused_imports
           -A ambiguous_glob_reexports
           -A clippy::diverging_sub_expression
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Next.js lint
+        run: cd apps/web && pnpm lint
+
+      - name: Vitest
+        run: cd apps/web && pnpm test
+
+      - name: Next.js build
+        run: cd apps/web && pnpm build
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+          NEXT_PUBLIC_RPC_ENDPOINT: "https://api.devnet.solana.com"
+          ADMIN_API_KEY: "ci-test-key"

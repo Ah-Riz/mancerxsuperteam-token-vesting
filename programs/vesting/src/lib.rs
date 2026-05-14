@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use anchor_lang::prelude::*;
 
 pub mod constants;
@@ -21,6 +23,10 @@ pub mod vesting {
         args: CreateCampaignArgs,
     ) -> Result<()> {
         instructions::create_campaign::handler(ctx, args)
+    }
+
+    pub fn create_stream(ctx: Context<CreateStream>, args: CreateStreamArgs) -> Result<()> {
+        instructions::create_stream::handler(ctx, args)
     }
 
     pub fn fund_campaign(ctx: Context<FundCampaign>, amount: u64) -> Result<()> {
@@ -47,6 +53,10 @@ pub mod vesting {
         instructions::update_root::handler(ctx, new_root, new_leaf_count)
     }
 
+    pub fn withdraw(ctx: Context<Withdraw>, args: WithdrawArgs) -> Result<()> {
+        instructions::withdraw::handler(ctx, args)
+    }
+
     pub fn withdraw_unvested(ctx: Context<WithdrawUnvested>) -> Result<()> {
         instructions::withdraw_unvested::handler(ctx)
     }
@@ -61,9 +71,8 @@ pub mod vesting {
 
     pub fn close_claim_record(
         ctx: Context<CloseClaimRecord>,
-        expected_total: u64,
     ) -> Result<()> {
-        instructions::close_claim_record::handler(ctx, expected_total)
+        instructions::close_claim_record::handler(ctx)
     }
 
     pub fn get_vested_amount(
