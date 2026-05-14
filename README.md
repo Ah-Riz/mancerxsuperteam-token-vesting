@@ -73,7 +73,7 @@ For deeper reads:
 ```bash
 git clone https://github.com/Ah-Riz/mancerxsuperteam-token-vesting.git
 cd mancerxsuperteam-token-vesting
-git checkout dev_lana  # Active development branch
+git checkout test      # Integration branch (merged from dev_lana + dev_geral)
 pnpm install
 ```
 
@@ -101,6 +101,25 @@ pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
 
 These tests (T17, T18, T20, T25, T47, T55, EXPLOIT 4) verify exact vesting percentages, grace period enforcement, and cancel-time clamping.
 
+## Frontend (apps/web)
+
+Next.js 15 dApp with wallet integration, vesting stream creation, and token claiming.
+
+```bash
+cd apps/web
+pnpm dev               # http://localhost:3000
+pnpm test              # 38 Vitest tests (vesting math, PDA derivation, Merkle)
+```
+
+Routes:
+- `/` — Landing page
+- `/campaign/create` — Create a vesting stream (calls `createStream`)
+- `/campaign/[treeAddress]` — View stream & claim tokens (calls `withdraw`)
+
+Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). Set `NEXT_PUBLIC_RPC_ENDPOINT` to override the default devnet RPC.
+
+Frontend docs: [`docs/PRD_GERAL.md`](docs/PRD_GERAL.md), [`docs/PDD_GERAL.md`](docs/PDD_GERAL.md), [`docs/TDD_GERAL.md`](docs/TDD_GERAL.md), [`docs/SECURITY_GERAL.md`](docs/SECURITY_GERAL.md).
+
 ## Devnet
 
 Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot 461219566 (~447KB allocation).
@@ -119,8 +138,8 @@ anchor deploy --provider.cluster devnet
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` + `anchor test` on every push and PR.
-`.github/workflows/lint.yml` runs `cargo clippy` separately (no merge conflict with ci.yml).
+`.github/workflows/ci.yml` runs `anchor build` + `anchor test` (local validator) on every push and PR.
+`.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
 
 ## License
 
