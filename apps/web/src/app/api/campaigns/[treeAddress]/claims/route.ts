@@ -14,10 +14,30 @@ export async function GET(
 ) {
   try {
     const { treeAddress } = await params;
+
+    if (!treeAddress || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(treeAddress)) {
+      return NextResponse.json(
+        { error: "Invalid address" },
+        { status: 400 },
+      );
+    }
+
     const { searchParams } = new URL(request.url);
 
     const beneficiary = searchParams.get("beneficiary");
-    const fromSlot = searchParams.get("fromSlot");
+    const fromSlotParam = searchParams.get("fromSlot");
+
+    if (fromSlotParam !== null) {
+      const n = Number(fromSlotParam);
+      if (!Number.isFinite(n) || n < 0 || fromSlotParam !== String(n) && !/^\d+$/.test(fromSlotParam)) {
+        return NextResponse.json(
+          { error: "Invalid fromSlot" },
+          { status: 400 },
+        );
+      }
+    }
+
+    const fromSlot = fromSlotParam;
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 50));
 
     // Find campaign by tree_address

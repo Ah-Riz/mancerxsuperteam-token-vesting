@@ -1377,9 +1377,9 @@ describe("GET /api/campaigns/[treeAddress]/claims", () => {
       }),
     });
 
-    const req = new NextRequest(makeUrl("/api/campaigns/nonexistent/claims"));
+    const req = new NextRequest(makeUrl("/api/campaigns/11111111111111111111111111111111/claims"));
     const res = await getClaims(req, {
-      params: Promise.resolve({ treeAddress: "nonexistent" }),
+      params: Promise.resolve({ treeAddress: "11111111111111111111111111111111" }),
     });
     const json = await res.json();
 
