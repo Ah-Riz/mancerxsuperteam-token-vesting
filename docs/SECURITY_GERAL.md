@@ -1,4 +1,4 @@
-# Security Design — Mancer Vesting Frontend (Geral's Scope)
+# Security Design — Velthoryn Vesting Frontend (Geral's Scope)
 
 **Author:** Geral — frontend lead  
 **Status:** Week 4 design, Week 6 implementation target  

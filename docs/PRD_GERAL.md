@@ -1,4 +1,4 @@
-# PRD — Mancer Vesting Frontend (Geral's Scope)
+# PRD — Velthoryn Vesting Frontend (Geral's Scope)
 
 **Author:** Geral — frontend lead  
 **Status:** Week 4 design, Week 6 implementation target  
@@ -26,7 +26,7 @@
 
 ### 1.1 Protocol without UI = unusable for target users
 
-Mancer's on-chain protocol (Lana's scope) solves the cost problem — 0.005 SOL flat cost for any campaign size vs. $1,990–$11,730 for competitors. But DAOs, project teams, and community managers are not CLI users. Without a frontend:
+Velthoryn's on-chain protocol (Lana's scope) solves the cost problem — 0.005 SOL flat cost for any campaign size vs. $1,990–$11,730 for competitors. But DAOs, project teams, and community managers are not CLI users. Without a frontend:
 
 - Campaign creation requires building Merkle trees via command line
 - Recipients must construct and submit `claim` transactions manually
@@ -48,7 +48,7 @@ The frontend transforms the protocol from a developer tool into a product:
 
 ### 1.3 Competitive positioning
 
-| Feature | Streamflow UI | Zebec UI | Mancer UI (target) |
+| Feature | Streamflow UI | Zebec UI | Velthoryn UI (target) |
 |---|---|---|---|
 | Campaign creation | Per-stream form | Per-stream form | **Bulk CSV upload → Merkle compression** |
 | Cost per 10K users | ~$3,720 | ~$11,730 | **~$0.42** |
@@ -459,7 +459,7 @@ Supported wallets (auto-detected):
 
 ---
 
-## §10 Current Implementation Status (Week 3 handoff → Week 4)
+## §10 Current Implementation Status (Week 4 — Updated)
 
 ### What's LIVE
 
@@ -471,24 +471,32 @@ Supported wallets (auto-detected):
 | `apps/web/src/store/useAppStore.ts` | **LIVE** | Zustand store (selectedCampaignId) |
 | `apps/web/src/app/layout.tsx` | **LIVE** | Root layout with providers |
 | `apps/web/src/app/page.tsx` | **LIVE** | Landing page with navigation |
-| `apps/web/tests/merkle/builder.test.ts` | **LIVE** | 4 passing, 1 skip (golden vector gate) |
+| `apps/web/src/app/campaign/create/page.tsx` | **LIVE** | Create stream form — wallet connect, PDA derivation, `createStream` call, error handling |
+| `apps/web/src/app/campaign/[id]/page.tsx` | **LIVE** | Withdraw page — fetch stream, vested amount calc, `withdraw` call, progress bar |
+| `apps/web/src/hooks/*.ts` | **LIVE** | 6 TanStack Query hooks (campaigns, claims, proofs, beneficiary) |
+| `apps/web/src/lib/anchor/client.ts` | **LIVE** | PDA derivation, program init with correct program ID |
+| `apps/web/src/lib/api/validators.ts` | **LIVE** | Input validation (address, amount, dates) |
+| `apps/web/tests/` | **LIVE** | 201 passing tests across 16 test files |
 
-### What's STUB / TODO
+### What's TODO (Week 5-6)
 
-| File | Status | Lands |
+| Feature | Status | Lands |
 |---|---|---|
-| `apps/web/src/hooks/useVestingProgram.ts` | **STUB** — returns null | Week 6 |
-| `apps/web/src/lib/anchor/client.ts` | **PARTIAL** — derivePda works, program init commented | Week 6 |
-| `apps/web/src/app/campaign/create/page.tsx` | **STUB** — placeholder text | Week 6 |
-| `apps/web/src/app/campaign/[id]/page.tsx` | **STUB** — placeholder text | Week 6 |
+| Campaign dashboard (list all campaigns) | TODO | Week 6 |
+| Admin panel (pause, cancel, root rotation) | TODO | Week 5-6 |
+| CSV bulk upload + Merkle tree builder UI | TODO | Week 6 |
+| IPFS/Pinata proof pinning | TODO | Week 6 |
+| Playwright E2E tests | TODO | Phase 2 |
+| Shadcn UI / Radix component library | TODO | Week 6 |
 
-### Known issues
+### Resolved issues (from Week 3)
 
-| Issue | Severity | Fix |
-|---|---|---|
-| `client.ts` PROGRAM_ID = `7mGET6...` (wrong) | **Critical** | Update to `G6iaig...` before any instruction call |
-| `useVestingProgram` returns null | Medium | Wire up with IDL import after `anchor build` |
-| No `.env.example` for `NEXT_PUBLIC_RPC_ENDPOINT` | Low | Add `.env.example` |
+| Issue | Resolution |
+|---|---|
+| `client.ts` PROGRAM_ID was `7mGET6...` | ✅ Fixed — now `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` |
+| `useVestingProgram` returned null | ✅ Fixed — wired with IDL import |
+| Hydration mismatch on wallet button | ✅ Fixed — `dynamic(() => import(...), { ssr: false })` |
+| `AccountNotInitialized` on source ATA | ✅ Fixed — `parseAnchorError()` + user guidance |
 
 ---
 

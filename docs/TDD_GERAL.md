@@ -1,4 +1,4 @@
-# TDD — Mancer Vesting Frontend Test Design (Geral's Scope)
+# TDD — Velthoryn Vesting Frontend Test Design (Geral's Scope)
 
 **Author:** Geral — frontend lead  
 **Status:** Week 4 design, Week 6 implementation target  
@@ -18,7 +18,7 @@
         │    (5-8)    │
         ├─────────────┤
         │   Unit      │  Vitest — components, hooks, utilities (Week 4-6)
-        │   (15-20)   │
+        │   (201)     │
         └─────────────┘
 ```
 
@@ -41,7 +41,7 @@
 **Framework:** ts-mocha (ships with Anchor)  
 **Location:** `tests/vesting.spec.ts`  
 **Run command:** `anchor test`  
-**Environment:** Anchor's embedded LiteSVM validator (local, ephemeral)
+**Environment:** `solana-test-validator` (localnet) for anchor test; `solana-bankrun` for clock-dependent tests (deterministic clock warp)
 
 ### Prerequisites
 
