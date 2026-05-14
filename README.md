@@ -4,8 +4,6 @@ Solana token-distribution protocol combining Merkle-tree compression with full v
 
 Built by Team 7 (Mancer x Superteam Scholarship).
 
-> **Build verified by @geral on 2026-05-06.** Clone-to-devnet in ~20 min on WSL/Ubuntu. See [Week 3 report](report-week3.md) for full verification log and friction points found.
-
 > **Setup time**: ~10 min from clone to a green test on a machine with Rust + Solana CLI + Anchor + Node already installed; ~30 min from a clean machine.
 
 ## Repo layout
@@ -13,10 +11,9 @@ Built by Team 7 (Mancer x Superteam Scholarship).
 ```
 mancer-vesting/
 ├── programs/vesting/   # Anchor program (Rust)              — owner: Lana
-├── clients/ts/         # Off-chain Merkle tooling (TS)      — owner: Lana
-├── apps/web/           # Frontend dApp                       — owner: Geral
+├── apps/web/           # Frontend dApp + Merkle tooling      — owner: Geral
 ├── tests/              # ts-mocha integration tests
-├── .github/workflows/  # CI: anchor build + anchor test
+├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── Anchor.toml
 ├── Cargo.toml
 ├── package.json
@@ -28,13 +25,12 @@ mancer-vesting/
 | Area                | Owner | Notes                                       |
 | ------------------- | ----- | ------------------------------------------- |
 | `programs/vesting/` | Lana  | Anchor program, instructions, state, math   |
-| `clients/ts/`       | Lana  | Leaf encoder, Merkle builder, proof helpers |
-| `apps/web/`         | Geral | Frontend stack, wallet adapter, UX          |
+| `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
 | Root configs, CI    | Joint | Workspace files, GitHub Actions             |
 
-## Architecture (Week 3 scaffold)
+## Current status
 
-The program declares **10 instruction entry points** matching the Week 2 architecture:
+**10 instruction entry points** matching the Week 2 architecture — all compile, handlers are stubs (`Ok(())`). State structs, error codes, and events are fully defined. `leaf_hash()` is live and byte-verified against the TS encoder. Real instruction logic lands Week 4.
 
 | Instruction          | Role                                                              |
 | -------------------- | ----------------------------------------------------------------- |
@@ -47,103 +43,64 @@ The program declares **10 instruction entry points** matching the Week 2 archite
 | `pause_campaign`     | Temporarily block claims.                                         |
 | `unpause_campaign`   | Resume a paused campaign.                                         |
 | `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
-| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.     |
-
-> **Week 3 status**: All 10 handlers compile with empty `Ok(())` bodies. State structs (`VestingTree`, `ClaimRecord`, `VestingLeaf`), error codes, and event types are fully defined per Week 2 architecture. Real instruction logic, Merkle math, and integration tests land in Weeks 4-5.
+| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
 
 For deeper reads:
-- [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts, where Week 4 picks up.
-- [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, sample calls.
+- [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts, what's live vs stub.
+- [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, Merkle helpers, sample calls.
 
 ## Prerequisites
 
 - Rust stable (edition 2021)
 - Solana CLI ≥ 2.1
-- Anchor CLI **1.0.0** — install with `avm install 1.0.0 && avm use 1.0.0`
+- Anchor CLI **1.0.0** — `avm install 1.0.0 && avm use 1.0.0`
 - Node ≥ 20
 - pnpm ≥ 10 (`npm i -g pnpm`)
+
+> **Windows users:** native Windows is not viable for Solana/Anchor development — use WSL2 (Ubuntu).
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/Ah-Riz/mancerxsuperteam-token-vesting.git
 cd mancerxsuperteam-token-vesting
-
+git checkout test      # Week 3 work — not yet merged to main
 pnpm install
 ```
 
-### First build — sync program ID
-
-The repo ships with a placeholder program ID. You must sync it to your local keypair before the first build:
+`target/deploy/vesting-keypair.json` is **not committed** (security). Generate it once on a fresh clone:
 
 ```bash
-solana address -k target/deploy/vesting-keypair.json
-# Copy the output address, then replace in Anchor.toml and programs/vesting/src/lib.rs:
-PROG_ID=$(solana address -k target/deploy/vesting-keypair.json) && \
-sed -i "s/Vest1111111111111111111111111111111111111111/$PROG_ID/g" Anchor.toml programs/vesting/src/lib.rs
+solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 ```
 
-Then build:
+> The program ID is already hardcoded in `Anchor.toml` and `programs/vesting/src/lib.rs` (`G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`). The keypair file is only needed locally to sign a redeploy — for normal build and test it isn't used.
 
 ```bash
-anchor build
+anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
+anchor test            # expected: 3 passing
 ```
 
-### Install test dependencies
+## Devnet
 
-Test runner (`ts-mocha`) and related packages are not yet in `package.json`. Install before running tests:
-
-```bash
-pnpm add -Dw ts-mocha mocha @types/mocha chai @types/chai typescript ts-node @coral-xyz/anchor @solana/web3.js
-```
-
-### Run tests
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (slot 460511260).
 
 ```bash
-anchor test
-```
-
-Expected output: `2 passing` from the `vesting program scaffold` suite.
-
-## Build
-
-```bash
-anchor build
-```
-
-Produces `target/deploy/vesting.so` and the IDL at `target/idl/vesting.json`. The program ID is fixed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (committed at `target/deploy/vesting-keypair.json`, since this is a *program* keypair, not a wallet).
-
-## Run tests
-
-`anchor test` boots the embedded validator (Anchor 1.0 LiteSVM by default) and runs the suite in `tests/`:
-
-```bash
-pnpm install     # first time only
-anchor test
-```
-
-Add new specs as `tests/*.spec.ts`. The runner is `ts-mocha` driven by the `[scripts] test` line in `Anchor.toml`.
-
-## Deploy to devnet
-
-```bash
-# 1. Point Solana CLI at devnet and fund the deployer wallet
-solana config set --url devnet
-solana airdrop 2
-
-# 2. Build and deploy
-anchor build
-anchor deploy --provider.cluster devnet
-
-# 3. Verify the deployment
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet
 ```
 
-`anchor deploy` reuses `target/deploy/vesting-keypair.json` so the program ID stays stable across redeploys.
+To redeploy (inject keypair from your local file — program ID stays stable):
+
+```bash
+solana config set --url devnet
+anchor build
+anchor deploy --provider.cluster devnet
+```
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` and `anchor test` on every push and pull request. See the badge on the GitHub repo for the latest status.
+`.github/workflows/ci.yml` runs `anchor build` + `anchor test` on every push and PR.
+`.github/workflows/lint.yml` runs `cargo clippy` separately (no merge conflict with ci.yml).
 
 ## License
 
