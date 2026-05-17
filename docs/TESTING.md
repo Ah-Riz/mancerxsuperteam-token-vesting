@@ -140,6 +140,33 @@ pnpm test -- --reporter=verbose  # detailed output
 | `tests/stream-persist.test.ts` | 1 | Stream state persistence |
 | `tests/vesting-errors.test.ts` | 5 | Error formatting and mapping |
 
+## Merkle Parity Test
+
+```bash
+pnpm tsx scripts/test-merkle-parity.ts
+# Expected: 13/13 checks pass (roots, proofs, cross-verification)
+```
+
+Validates that `clients/ts/src/merkle.ts` and `apps/web/src/lib/merkle/builder.ts` produce byte-identical roots and proofs for Cliff, Linear, and Milestone release types.
+
+## E2E Merkle Pipeline Test
+
+```bash
+# Start dev server first:
+cd apps/web && pnpm dev
+
+# In another terminal:
+pnpm tsx scripts/test-be-merkle-pipeline.ts
+# Expected: ALL PASS (prepare, POST 201, GET campaigns, GET proofs 3/3, verifyProof 3/3)
+
+# Against deployed URL:
+pnpm tsx scripts/test-be-merkle-pipeline.ts --url https://your-app.vercel.app --timeout 120000
+```
+
+Validates the full BE-SC pipeline: `prepareCampaign` → POST campaign → GET proof per beneficiary → verify proof against root. Tests 3 release types (Cliff, Linear, Milestone).
+
+CI runs this in `.github/workflows/web-ci.yml` using a Postgres service container.
+
 ---
 
 ## Test Isolation

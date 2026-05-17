@@ -7,10 +7,10 @@ const connectionString = process.env.DATABASE_URL;
 const client = postgres(
   connectionString ?? "postgresql://unconfigured:unconfigured@localhost:1/unconfigured",
   {
-    max: 1,
+    max: 3,
     ssl: connectionString ? { rejectUnauthorized: false } : undefined,
     idle_timeout: connectionString ? 20 : 1,
-    connect_timeout: connectionString ? 10 : 1,
+    connect_timeout: 30,
   },
 );
 

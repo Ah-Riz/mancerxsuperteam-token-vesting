@@ -46,6 +46,14 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
+    // Cross-check declared leafCount matches actual leaves
+    if (data.leafCount !== data.leaves.length) {
+      return NextResponse.json(
+        { error: `leafCount (${data.leafCount}) does not match leaves array length (${data.leaves.length})` },
+        { status: 400 },
+      );
+    }
+
     // Verify first leaf against declared merkleRoot
     const firstLeaf = data.leaves[0];
     const leafForHash = {
@@ -70,8 +78,14 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-    } else if (firstLeaf.proof.length > 0) {
-      // Multi-leaf tree: verify first leaf's proof
+    } else {
+      // Multi-leaf tree: verify first leaf's proof (required)
+      if (firstLeaf.proof.length === 0) {
+        return NextResponse.json(
+          { error: "Multi-leaf campaign requires proof for first leaf" },
+          { status: 400 },
+        );
+      }
       const proofBufs = firstLeaf.proof.map((sibling) => Buffer.from(sibling));
       const valid = verifyProof(leafHash, proofBufs, firstLeaf.leafIndex, rootBuf);
       if (!valid) {

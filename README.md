@@ -35,6 +35,7 @@ velthoryn/
 **Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
 **Test results: 74/74 SC tests PASS, 208/208 FE tests PASS** (stream checklist: T58 50% withdraw, T59 double-withdraw guard)
+**BE-SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) flow through prepare → POST → GET proof → verify against deployed API. RLS enabled on all Supabase tables.
 - Devnet: 58+ passing; clock-dependent cases run on bankrun
 - Localnet (bankrun): `tests/vesting.clock.spec.ts` — T17–T20, T25, T47, T55–T59, EXPLOIT 4
 
@@ -128,6 +129,8 @@ Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). 
 | `/api/beneficiary/[address]/campaigns` | GET | All campaigns for address |
 | `/api/admin/sync` | POST | Indexer: backfill claim events (auth: x-admin-key) |
 
+All routes deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Supabase tables have Row Level Security enabled (read-public, write-service-role).
+
 See [`docs/BACKEND_API.md`](docs/BACKEND_API.md) for full API documentation.
 
 ### Vercel Deployment
@@ -156,6 +159,7 @@ anchor deploy --provider.cluster devnet
 
 `.github/workflows/ci.yml` runs `anchor build` + `pnpm test:localnet` on every push and PR.
 `.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
+`.github/workflows/web-ci.yml` runs merkle parity test, E2E pipeline test (Postgres service container + dev server), and web build + Vitest on every push and PR.
 
 ## License
 
