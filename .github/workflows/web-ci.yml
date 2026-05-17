@@ -69,24 +69,32 @@ jobs:
       - name: Push DB schema
         run: cd apps/web && echo "y" | pnpm drizzle-kit push
 
-      - name: Start Next.js dev server
-        run: cd apps/web && pnpm dev &
-
-      - name: Wait for dev server
+      - name: Start dev server and run E2E test
         run: |
-          for i in $(seq 1 30); do
+          cd apps/web
+          nohup pnpm dev > /tmp/nextdev.log 2>&1 &
+          echo $! > /tmp/nextdev.pid
+
+          # Wait for dev server to accept connections (up to 90s)
+          for i in $(seq 1 45); do
             if curl -sf http://localhost:3000/api/campaigns > /dev/null 2>&1; then
-              echo "Dev server is ready"
-              exit 0
+              echo "Dev server is ready (attempt $i)"
+              break
             fi
-            echo "Waiting for dev server... ($i/30)"
+            echo "Waiting for dev server... ($i/45)"
             sleep 2
           done
-          echo "ERROR: dev server did not start in time"
-          exit 1
 
-      - name: Run E2E merkle pipeline test
-        run: pnpm tsx scripts/test-be-merkle-pipeline.ts --timeout 120000
+          # Verify server is actually up
+          if ! curl -sf http://localhost:3000/api/campaigns > /dev/null 2>&1; then
+            echo "ERROR: dev server did not start in time"
+            cat /tmp/nextdev.log
+            exit 1
+          fi
+
+          # Run the E2E test from repo root
+          cd $GITHUB_WORKSPACE
+          pnpm tsx scripts/test-be-merkle-pipeline.ts --timeout 120000
 
   web-build-test:
     name: Web build & test
