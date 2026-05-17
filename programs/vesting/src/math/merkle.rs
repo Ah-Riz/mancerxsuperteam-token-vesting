@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv;
+#[cfg(test)]
+use crate::constants::MAX_MERKLE_PROOF_LEN;
 use crate::state::VestingLeaf;
 
 pub const LEAF_PREFIX: u8 = 0x00;
@@ -8,6 +10,15 @@ pub const NODE_PREFIX: u8 = 0x01;
 pub fn leaf_hash(leaf: &VestingLeaf) -> [u8; 32] {
     let serialized = borsh::to_vec(leaf).expect("borsh: VestingLeaf");
     hashv(&[&[LEAF_PREFIX], &serialized]).to_bytes()
+}
+
+/// Maximum proof siblings required for a tree with `leaf_count` leaves (`ceil(log2(n))`, 0 for n≤1).
+pub fn max_proof_len_for_leaf_count(leaf_count: u32) -> usize {
+    if leaf_count <= 1 {
+        0
+    } else {
+        (32 - (leaf_count - 1).leading_zeros()) as usize
+    }
 }
 
 pub fn verify_merkle_proof(
@@ -94,6 +105,34 @@ mod tests {
 
         assert!(verify_merkle_proof(hashes[0], &[hashes[1], l1_1], 0, root));
         assert!(verify_merkle_proof(hashes[3], &[hashes[2], l1_0], 3, root));
+    }
+
+    /// Odd-count tree: duplicate last leaf at layer 0 (matches clients/ts merkle.ts).
+    #[test]
+    fn verify_three_leaf() {
+        let leaves: Vec<VestingLeaf> = (0..3).map(make_leaf).collect();
+        let hashes: Vec<[u8; 32]> = leaves.iter().map(leaf_hash).collect();
+        let l1_0 = node_hash(hashes[0], hashes[1]);
+        let l1_1 = node_hash(hashes[2], hashes[2]);
+        let root = node_hash(l1_0, l1_1);
+
+        assert!(verify_merkle_proof(hashes[0], &[hashes[1], l1_1], 0, root));
+        assert!(verify_merkle_proof(hashes[1], &[hashes[0], l1_1], 1, root));
+        assert!(verify_merkle_proof(hashes[2], &[hashes[2], l1_0], 2, root));
+
+        let mut bad_root = root;
+        bad_root[0] ^= 0xff;
+        assert!(!verify_merkle_proof(hashes[2], &[hashes[2], l1_0], 2, bad_root));
+    }
+
+    #[test]
+    fn max_proof_len_for_leaf_count_values() {
+        assert_eq!(max_proof_len_for_leaf_count(0), 0);
+        assert_eq!(max_proof_len_for_leaf_count(1), 0);
+        assert_eq!(max_proof_len_for_leaf_count(2), 1);
+        assert_eq!(max_proof_len_for_leaf_count(4), 2);
+        assert_eq!(max_proof_len_for_leaf_count(1_000_000), 20);
+        assert!(max_proof_len_for_leaf_count(u32::MAX) <= MAX_MERKLE_PROOF_LEN);
     }
 
     #[test]

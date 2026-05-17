@@ -35,9 +35,11 @@ velthoryn/
 
 **Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
-**Test results: 63/63 PASS**
-- Devnet: 56 passing, 7 skipped (clock-dependent tests skip gracefully on devnet)
-- Localnet (bankrun): 7/7 clock-dependent tests pass with deterministic clock warping
+**Test results: 65/65 PASS** (stream checklist: T58 50% withdraw, T59 double-withdraw guard)
+- Devnet: 58+ passing; clock-dependent cases run on bankrun
+- Localnet (bankrun): `tests/vesting.clock.spec.ts` — T17–T20, T25, T47, T55–T59, EXPLOIT 4
+
+See [`docs/STREAM_MODEL.md`](docs/STREAM_MODEL.md) (tutorial `Stream` PDA vs campaign model) and [`docs/ERROR_MAP.md`](docs/ERROR_MAP.md).
 
 | Instruction          | Role                                                              |
 | -------------------- | ----------------------------------------------------------------- |
@@ -90,19 +92,11 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-anchor test            # local validator: 56 passing, 7 skipped (clock-dependent)
+pnpm test:localnet     # persistent validator — 74/74 passing (~2m)
+pnpm test:devnet       # against devnet RPC (deployed program + funded wallet)
 ```
 
-### Clock-dependent tests (bankrun)
-
-7 tests require deterministic clock warping and run via `solana-bankrun`:
-
-```bash
-pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
-# 7/7 PASS (~600ms)
-```
-
-These tests (T17, T18, T20, T25, T47, T55, EXPLOIT 4) verify exact vesting percentages, grace period enforcement, and cancel-time clamping.
+Clock-dependent tests (11) use `solana-bankrun` inside the full suite; they are included in `pnpm test:localnet` and do not need a separate run.
 
 ## Frontend (apps/web)
 
@@ -141,7 +135,7 @@ anchor deploy --provider.cluster devnet
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` + `anchor test` (local validator) on every push and PR.
+`.github/workflows/ci.yml` runs `anchor build` + `pnpm test:localnet` on every push and PR.
 `.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
 
 ## License
