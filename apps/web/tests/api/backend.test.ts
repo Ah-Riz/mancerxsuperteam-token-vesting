@@ -1731,9 +1731,9 @@ describe("Merkle proof verification (indirect)", () => {
     expect(json.ok).toBe(true);
   });
 
-  it("multi-leaf tree with empty proof skips verification (leafCount > 1, proof empty)", async () => {
-    // When proof is empty for a multi-leaf tree, the code path
-    // falls through to DB insert (neither single-leaf check nor proof check triggers)
+  it("multi-leaf tree with empty proof rejects with 400", async () => {
+    // Multi-leaf trees must provide a proof for the first leaf —
+    // otherwise the merkle root cannot be verified.
     const leaf0 = makeLeaf({ leafIndex: 0, proof: [] });
     const leaf1 = makeLeaf({ leafIndex: 1, beneficiary: OTHER_BENEFICIARY, proof: [] });
 
@@ -1743,37 +1743,14 @@ describe("Merkle proof verification (indirect)", () => {
       leaves: [leaf0, leaf1],
     });
 
-    mockTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const insertCampaignChain = {
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 1 }]),
-        }),
-      };
-      const insertRootVersionChain = {
-        values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 1 }]),
-        }),
-      };
-      const insertLeavesChain = {
-        values: vi.fn().mockResolvedValue(undefined),
-      };
-      const tx = {
-        insert: vi.fn()
-          .mockReturnValueOnce(insertCampaignChain)
-          .mockReturnValueOnce(insertRootVersionChain)
-          .mockReturnValueOnce(insertLeavesChain),
-      };
-      return callback(tx);
-    });
-
     const req = new NextRequest(makeUrl("/api/campaigns"), {
       method: "POST",
       body: JSON.stringify(body),
     });
     const res = await postCampaigns(req);
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.ok).toBe(true);
+    expect(json.error).toContain("proof");
   });
 });
