@@ -187,5 +187,5 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
 
 fn token_account(acc: &AccountInfo) -> Result<TokenAccount> {
     let data = acc.try_borrow_data()?;
-    TokenAccount::try_deserialize(&mut &data[..]).map_err(Into::into)
+    TokenAccount::try_deserialize(&mut &data[..])
 }

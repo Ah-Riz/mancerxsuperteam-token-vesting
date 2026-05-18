@@ -9,7 +9,7 @@ export type LeafProofInput = {
   cliffTime: string | number | bigint;
   endTime: string | number | bigint;
   milestoneIdx: number;
-  proof: string[];
+  proof: number[][];
 };
 
 function toLeaf(input: LeafProofInput): VestingLeaf {

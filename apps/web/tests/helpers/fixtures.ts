@@ -76,13 +76,13 @@ export async function seedClaimEvent(
     campaignId,
     beneficiary: overrides.beneficiary ?? "11111111111111111111111111111111",
     leafIndex: overrides.leafIndex ?? 0,
-    amount: String(overrides.amount ?? 100000),
-    totalClaimedByUser: String(overrides.totalClaimedByUser ?? 100000),
-    totalClaimedOverall: String(overrides.totalClaimedOverall ?? 100000),
+    amount: BigInt(overrides.amount ?? 100000),
+    totalClaimedByUser: BigInt(overrides.totalClaimedByUser ?? 100000),
+    totalClaimedOverall: BigInt(overrides.totalClaimedOverall ?? 100000),
     milestoneIdx: null,
     signature: sig,
-    slot: String(overrides.slot ?? 1000),
-    blockTime: String(overrides.blockTime ?? 1700000000),
+    slot: BigInt(overrides.slot ?? 1000),
+    blockTime: BigInt(overrides.blockTime ?? 1700000000),
   });
 }
 
@@ -90,21 +90,22 @@ export async function setCampaignStatus(
   treeAddress: string,
   patch: Partial<{
     paused: boolean;
-    cancelledAt: string | null;
-    totalClaimed: string;
-    totalSupply: string;
+    cancelledAt: string | number | null;
+    totalClaimed: string | number;
+    totalSupply: string | number;
     leafCount: number;
   }>,
 ): Promise<void> {
-  const normalized = { ...patch };
-  if (normalized.cancelledAt !== undefined && normalized.cancelledAt !== null) {
-    normalized.cancelledAt = String(normalized.cancelledAt);
+  const { cancelledAt, totalClaimed, totalSupply, ...rest } = patch;
+  const update: Partial<typeof campaigns.$inferInsert> = { ...rest };
+  if (cancelledAt !== undefined) {
+    update.cancelledAt = cancelledAt === null ? null : BigInt(cancelledAt);
   }
-  if (normalized.totalClaimed !== undefined) {
-    normalized.totalClaimed = String(normalized.totalClaimed);
+  if (totalClaimed !== undefined) {
+    update.totalClaimed = BigInt(totalClaimed);
   }
-  if (normalized.totalSupply !== undefined) {
-    normalized.totalSupply = String(normalized.totalSupply);
+  if (totalSupply !== undefined) {
+    update.totalSupply = BigInt(totalSupply);
   }
-  await db.update(campaigns).set(normalized).where(eq(campaigns.treeAddress, treeAddress));
+  await db.update(campaigns).set(update).where(eq(campaigns.treeAddress, treeAddress));
 }

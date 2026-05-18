@@ -6,8 +6,8 @@ import { campaigns, rootVersions, leaves } from "@/lib/db/schema";
 import { createRootVersionRequestSchema } from "@/lib/api/validators";
 import { verifyAllLeaves } from "@/lib/merkle/verify";
 
-function u64String(value: string | number): string {
-  return String(value);
+function u64BigInt(value: string | number): bigint {
+  return BigInt(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ export async function POST(
         leafCount: data.leafCount,
         ipfsCid: data.ipfsCid ?? null,
         version: nextVersion,
-        createdAt: String(Math.floor(Date.now() / 1000)),
+        createdAt: u64BigInt(Math.floor(Date.now() / 1000)),
       })
       .returning({ id: rootVersions.id });
 
@@ -85,11 +85,11 @@ export async function POST(
       rootVersionId: insertedRootVersion.id,
       leafIndex: leaf.leafIndex,
       beneficiary: leaf.beneficiary,
-      amount: u64String(leaf.amount),
+      amount: u64BigInt(leaf.amount),
       releaseType: leaf.releaseType,
-      startTime: u64String(leaf.startTime),
-      cliffTime: u64String(leaf.cliffTime),
-      endTime: u64String(leaf.endTime),
+      startTime: u64BigInt(leaf.startTime),
+      cliffTime: u64BigInt(leaf.cliffTime),
+      endTime: u64BigInt(leaf.endTime),
       milestoneIdx: leaf.milestoneIdx,
       proof: leaf.proof,
     }));

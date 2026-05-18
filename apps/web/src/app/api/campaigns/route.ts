@@ -6,8 +6,8 @@ import { campaigns, rootVersions, leaves } from "@/lib/db/schema";
 import { createCampaignRequestSchema } from "@/lib/api/validators";
 import { verifyAllLeaves } from "@/lib/merkle/verify";
 
-function u64String(value: string | number): string {
-  return String(value);
+function u64BigInt(value: string | number): bigint {
+  return BigInt(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -53,11 +53,11 @@ export async function POST(request: NextRequest) {
       rootVersionId: 0, // placeholder, set after root version insert
       leafIndex: leaf.leafIndex,
       beneficiary: leaf.beneficiary,
-      amount: u64String(leaf.amount),
+      amount: u64BigInt(leaf.amount),
       releaseType: leaf.releaseType,
-      startTime: u64String(leaf.startTime),
-      cliffTime: u64String(leaf.cliffTime),
-      endTime: u64String(leaf.endTime),
+      startTime: u64BigInt(leaf.startTime),
+      cliffTime: u64BigInt(leaf.cliffTime),
+      endTime: u64BigInt(leaf.endTime),
       milestoneIdx: leaf.milestoneIdx,
       proof: leaf.proof,
     }));
@@ -83,12 +83,12 @@ export async function POST(request: NextRequest) {
           treeAddress: data.treeAddress,
           creator: data.creator,
           mint: data.mint,
-          campaignId: u64String(data.campaignId),
+          campaignId: u64BigInt(data.campaignId),
           merkleRoot: data.merkleRoot,
           leafCount: data.leafCount,
-          totalSupply: u64String(data.totalSupply),
+          totalSupply: u64BigInt(data.totalSupply),
           cancellable: data.cancellable,
-          createdAt: u64String(data.createdAt),
+          createdAt: u64BigInt(data.createdAt),
           metadata: data.metadata ?? null,
         })
         .returning({ id: campaigns.id });
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
           leafCount: data.leafCount,
           ipfsCid: data.ipfsCid ?? null,
           version: 1,
-          createdAt: u64String(data.createdAt),
+          createdAt: u64BigInt(data.createdAt),
         })
         .returning({ id: rootVersions.id });
 

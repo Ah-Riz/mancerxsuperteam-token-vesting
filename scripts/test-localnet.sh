@@ -48,9 +48,15 @@ else
 fi
 
 PROGRAM_ID="G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu"
+KEYPAIR="${ROOT}/target/deploy/vesting-keypair.json"
+if [[ ! -f "$KEYPAIR" ]]; then
+  echo "ERROR: $KEYPAIR not found — run anchor build first"
+  exit 1
+fi
 echo "Upgrading program $PROGRAM_ID on local validator..."
 solana program deploy "$ROOT/target/deploy/vesting.so" \
   --program-id "$PROGRAM_ID" \
+  --keypair "$KEYPAIR" \
   --url "$VALIDATOR_URL"
 
 anchor test --skip-local-validator "${ANCHOR_TEST_ARGS[@]}" "$@"

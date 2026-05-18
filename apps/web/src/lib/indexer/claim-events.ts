@@ -128,13 +128,13 @@ export async function syncClaimEvents(
             campaignId,
             beneficiary: event.beneficiary,
             leafIndex: event.leafIndex,
-            amount: event.amount,
-            totalClaimedByUser: String(event.totalClaimedByUser),
-            totalClaimedOverall: String(event.totalClaimedOverall),
+            amount: BigInt(event.amount),
+            totalClaimedByUser: BigInt(event.totalClaimedByUser),
+            totalClaimedOverall: BigInt(event.totalClaimedOverall),
             milestoneIdx: event.milestoneIdx,
             signature,
-            slot: String(slot),
-            blockTime: String(tx.blockTime ?? Math.floor(Date.now() / 1000)),
+            slot: BigInt(slot),
+            blockTime: BigInt(tx.blockTime ?? Math.floor(Date.now() / 1000)),
           }).onConflictDoNothing();
 
           await db
