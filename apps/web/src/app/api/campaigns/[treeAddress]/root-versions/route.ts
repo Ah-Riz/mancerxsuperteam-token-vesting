@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonResponse } from "@/lib/api/json-response";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, rootVersions, leaves } from "@/lib/db/schema";
 import { createRootVersionRequestSchema } from "@/lib/api/validators";
+import { verifyAllLeaves } from "@/lib/merkle/verify";
+
+function u64String(value: string | number): string {
+  return String(value);
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/campaigns/:treeAddress/root-versions — root rotation
@@ -26,6 +32,18 @@ export async function POST(
     }
 
     const data = parsed.data;
+
+    const proofCheck = verifyAllLeaves(data.leaves, data.merkleRoot);
+    if (!proofCheck.ok) {
+      const leafSuffix =
+        proofCheck.leafIndex !== undefined
+          ? ` for leaf index ${proofCheck.leafIndex}`
+          : "";
+      return NextResponse.json(
+        { error: `${proofCheck.error}${leafSuffix}` },
+        { status: 400 },
+      );
+    }
 
     // Find campaign by tree_address
     const [campaign] = await db
@@ -58,7 +76,7 @@ export async function POST(
         leafCount: data.leafCount,
         ipfsCid: data.ipfsCid ?? null,
         version: nextVersion,
-        createdAt: Math.floor(Date.now() / 1000),
+        createdAt: String(Math.floor(Date.now() / 1000)),
       })
       .returning({ id: rootVersions.id });
 
@@ -67,11 +85,11 @@ export async function POST(
       rootVersionId: insertedRootVersion.id,
       leafIndex: leaf.leafIndex,
       beneficiary: leaf.beneficiary,
-      amount: Number(leaf.amount),
+      amount: u64String(leaf.amount),
       releaseType: leaf.releaseType,
-      startTime: Number(leaf.startTime),
-      cliffTime: Number(leaf.cliffTime),
-      endTime: Number(leaf.endTime),
+      startTime: u64String(leaf.startTime),
+      cliffTime: u64String(leaf.cliffTime),
+      endTime: u64String(leaf.endTime),
       milestoneIdx: leaf.milestoneIdx,
       proof: leaf.proof,
     }));
@@ -89,7 +107,7 @@ export async function POST(
       })
       .where(eq(campaigns.id, campaign.id));
 
-    return NextResponse.json(
+    return jsonResponse(
       { ok: true, version: nextVersion },
       { status: 201 },
     );

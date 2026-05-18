@@ -76,13 +76,13 @@ export async function seedClaimEvent(
     campaignId,
     beneficiary: overrides.beneficiary ?? "11111111111111111111111111111111",
     leafIndex: overrides.leafIndex ?? 0,
-    amount: overrides.amount ?? 100000,
-    totalClaimedByUser: overrides.totalClaimedByUser ?? 100000,
-    totalClaimedOverall: overrides.totalClaimedOverall ?? 100000,
+    amount: String(overrides.amount ?? 100000),
+    totalClaimedByUser: String(overrides.totalClaimedByUser ?? 100000),
+    totalClaimedOverall: String(overrides.totalClaimedOverall ?? 100000),
     milestoneIdx: null,
     signature: sig,
-    slot: overrides.slot ?? 1000,
-    blockTime: overrides.blockTime ?? 1700000000,
+    slot: String(overrides.slot ?? 1000),
+    blockTime: String(overrides.blockTime ?? 1700000000),
   });
 }
 
@@ -90,11 +90,21 @@ export async function setCampaignStatus(
   treeAddress: string,
   patch: Partial<{
     paused: boolean;
-    cancelledAt: number | null;
-    totalClaimed: number;
-    totalSupply: number;
+    cancelledAt: string | null;
+    totalClaimed: string;
+    totalSupply: string;
     leafCount: number;
   }>,
 ): Promise<void> {
-  await db.update(campaigns).set(patch).where(eq(campaigns.treeAddress, treeAddress));
+  const normalized = { ...patch };
+  if (normalized.cancelledAt !== undefined && normalized.cancelledAt !== null) {
+    normalized.cancelledAt = String(normalized.cancelledAt);
+  }
+  if (normalized.totalClaimed !== undefined) {
+    normalized.totalClaimed = String(normalized.totalClaimed);
+  }
+  if (normalized.totalSupply !== undefined) {
+    normalized.totalSupply = String(normalized.totalSupply);
+  }
+  await db.update(campaigns).set(normalized).where(eq(campaigns.treeAddress, treeAddress));
 }
