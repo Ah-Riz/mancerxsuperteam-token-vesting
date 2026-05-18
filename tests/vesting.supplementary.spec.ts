@@ -3523,6 +3523,15 @@ describe("vesting supplementary T6-T25", () => {
       await provider.sendAndConfirm(createAtaTx, [creator]);
     }
 
+    const benBefore = Number(
+      (await getAccount(provider.connection, beneficiaryAta).catch(() => null))
+        ?.amount ?? 0,
+    );
+    const creatorBeforeAmt = Number(
+      (await getAccount(provider.connection, creatorAta).catch(() => null))
+        ?.amount ?? 0,
+    );
+
     await program.methods
       .cancelStream(withdrawArgs)
       .accounts({
@@ -3539,19 +3548,11 @@ describe("vesting supplementary T6-T25", () => {
       .signers([creator])
       .rpc();
 
-    const creatorBeforeCancel = await getAccount(
-      provider.connection,
-      creatorAta,
-    ).catch(() => null);
-
     const postBeneficiary = await getAccount(provider.connection, beneficiaryAta);
     const postCreator = await getAccount(provider.connection, creatorAta);
     const postVault = await getAccount(provider.connection, vault);
 
-    const creatorBeforeAmt = creatorBeforeCancel
-      ? Number(creatorBeforeCancel.amount)
-      : 0;
-    const toBeneficiary = Number(postBeneficiary.amount);
+    const toBeneficiary = Number(postBeneficiary.amount) - benBefore;
     const toCreator = Number(postCreator.amount) - creatorBeforeAmt;
     expect(Number(postVault.amount)).to.equal(0);
     expect(toBeneficiary + toCreator).to.equal(AMOUNT);
