@@ -15,6 +15,8 @@ export function uniqueTreeAddress(): string {
   return Keypair.generate().publicKey.toBase58();
 }
 
+let nextOnChainCampaignId = 1;
+
 export async function createCampaignViaPost(
   overrides: Record<string, unknown> = {},
 ): Promise<{
@@ -23,6 +25,8 @@ export async function createCampaignViaPost(
   status: number;
 }> {
   const treeAddress = (overrides.treeAddress as string) ?? uniqueTreeAddress();
+  const onChainCampaignId =
+    (overrides.campaignId as number | undefined) ?? nextOnChainCampaignId++;
   const leaf = makeLeaf(overrides.leaf as Record<string, unknown> | undefined);
   const leaves = (overrides.leaves as ReturnType<typeof makeLeaf>[] | undefined) ?? [
     leaf,
@@ -34,6 +38,7 @@ export async function createCampaignViaPost(
     merkleRoot,
     leafCount: leaves.length,
     leaves,
+    campaignId: onChainCampaignId,
     ...overrides,
   });
 

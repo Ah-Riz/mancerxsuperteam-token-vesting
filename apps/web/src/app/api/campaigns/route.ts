@@ -111,41 +111,36 @@ export async function POST(request: NextRequest) {
     }));
 
     return await db.transaction(async (tx) => {
-      // Try insert, catch unique constraint violation for idempotency
-      let campaignId: number;
-      try {
-        const [inserted] = await tx
-          .insert(campaigns)
-          .values({
-            treeAddress: data.treeAddress,
-            creator: data.creator,
-            mint: data.mint,
-            campaignId: data.campaignId,
-            merkleRoot: data.merkleRoot,
-            leafCount: data.leafCount,
-            totalSupply: Number(data.totalSupply),
-            cancellable: data.cancellable,
-            createdAt: data.createdAt,
-            metadata: data.metadata ?? null,
-          })
-          .returning({ id: campaigns.id });
-        campaignId = inserted.id;
-      } catch (e: unknown) {
-        // Check for unique constraint violation (PostgreSQL error code 23505)
-        const err = e as { code?: string };
-        if (err?.code === "23505") {
-          const [existing] = await tx
-            .select({ id: campaigns.id })
-            .from(campaigns)
-            .where(eq(campaigns.treeAddress, data.treeAddress))
-            .limit(1);
-          return NextResponse.json(
-            { ok: true, campaignId: existing.id },
-            { status: 200 },
-          );
-        }
-        throw e;
+      // Idempotent retry: check before insert (catching 23505 leaves the tx aborted in Postgres)
+      const [existing] = await tx
+        .select({ id: campaigns.id })
+        .from(campaigns)
+        .where(eq(campaigns.treeAddress, data.treeAddress))
+        .limit(1);
+
+      if (existing) {
+        return NextResponse.json(
+          { ok: true, campaignId: existing.id },
+          { status: 200 },
+        );
       }
+
+      const [inserted] = await tx
+        .insert(campaigns)
+        .values({
+          treeAddress: data.treeAddress,
+          creator: data.creator,
+          mint: data.mint,
+          campaignId: data.campaignId,
+          merkleRoot: data.merkleRoot,
+          leafCount: data.leafCount,
+          totalSupply: Number(data.totalSupply),
+          cancellable: data.cancellable,
+          createdAt: data.createdAt,
+          metadata: data.metadata ?? null,
+        })
+        .returning({ id: campaigns.id });
+      const campaignId = inserted.id;
 
       // Insert root version (version = 1)
       const [insertedRootVersion] = await tx

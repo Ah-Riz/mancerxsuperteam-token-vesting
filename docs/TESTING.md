@@ -131,6 +131,10 @@ pnpm test              # full suite (requires DATABASE_URL)
 pnpm test -- --reporter=verbose  # detailed output
 ```
 
+`tests/globalSetup.ts` runs `drizzle-kit push` locally when `DATABASE_URL` is set (skipped when `CI=true` — workflows push schema explicitly). Each API test file calls `resetDb()` in `beforeEach` to truncate tables.
+
+**Test helpers:** `tests/helpers/db.ts` (`resetDb`), `tests/helpers/fixtures.ts` (`createCampaignViaPost`, `seedClaimEvent`), `tests/helpers/requests.ts` (shared campaign payloads).
+
 | Test File | Tests | Purpose |
 |-----------|-------|---------|
 | `tests/api/backend.test.ts` | ~69 | API routes — campaigns, claims, proofs, beneficiary, admin sync (real DB) |
@@ -180,6 +184,15 @@ pnpm tsx scripts/test-be-merkle-pipeline.ts --url https://your-app.vercel.app --
 Validates the full BE-SC pipeline: `prepareCampaign` → POST campaign → GET proof per beneficiary → verify proof against root. Tests 3 release types (Cliff, Linear, Milestone).
 
 CI runs this in `.github/workflows/web-ci.yml` using a Postgres service container.
+
+## CI workflows (web + API)
+
+| Job | Workflow | Postgres? | Notes |
+|-----|----------|-----------|-------|
+| `merkle-parity` | `web-ci.yml` | No | `scripts/test-merkle-parity.ts` (13 checks) |
+| `e2e-pipeline` | `web-ci.yml` | Yes | `drizzle-kit push` → dev server → `test-be-merkle-pipeline.ts` |
+| `web-build-test` | `web-ci.yml` | Yes | `drizzle-kit push` → Vitest → `next build` |
+| `lint` | `lint.yml` | Yes | clippy + lint + Vitest + build (same DB URL) |
 
 ---
 

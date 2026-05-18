@@ -878,7 +878,7 @@ describe("GET /api/beneficiary/[address]/campaigns", () => {
     expect(json.campaigns).toHaveLength(1);
     expect(json.campaigns[0].treeAddress).toBe(TREE_ADDRESS);
     expect(json.campaigns[0].myLeaf).toBeDefined();
-    expect(json.campaigns[0].myLeaf.amount).toBe(1000000);
+    expect(Number(json.campaigns[0].myLeaf.amount)).toBe(1000000);
   });
 
   it("returns empty array if no campaigns found", async () => {

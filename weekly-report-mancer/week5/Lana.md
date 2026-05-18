@@ -46,11 +46,21 @@ Phase 6 — Post-Deploy E2E:
 
 - New `.github/workflows/web-ci.yml` with 3 parallel jobs: merkle-parity, e2e-pipeline (Postgres container + dev server), web-build-test (Vitest + build)
 - Uses `postgres:15` service container with health checks, `127.0.0.1` for DATABASE_URL
+- `lint.yml` updated: Postgres service + `drizzle-kit push` before Vitest (API tests no longer pass without a DB)
+- Host-aware DB SSL: TLS for Supabase, plain TCP for `127.0.0.1` (fixes CI `ECONNRESET` on `/api/campaigns`)
+
+### API test migration (real Postgres)
+
+- Removed `vi.mock("@/lib/db")` from `tests/api/backend.test.ts` and `bug-fix-validation.test.ts`
+- Added `tests/helpers/db.ts`, `fixtures.ts`, `requests.ts`; `tests/globalSetup.ts` for local schema push
+- API route tests seed campaigns via real `POST` handlers and assert DB state; admin sync / indexer cursor tests still mock RPC only
+- Dropped mock-only “500 on DB error” cases (not reproducible without mocking the driver)
 
 ### Infrastructure
 
 - DB pool config: `max: 3`, `connect_timeout: 30` for Supabase pooler latency
 - `apps/web/.env` symlinked to `../../.env`
+- `pnpm db:push` script in `apps/web/package.json`
 
 ---
 
@@ -69,8 +79,9 @@ Phase 6 — Post-Deploy E2E:
 | Proof verification bypass fixed | Multi-leaf empty-first-leaf proof rejected with 400 |
 | `apps/web/` builds cleanly | `pnpm build` exits 0 |
 | 74/74 SC tests pass | Up from 63 in Week 4 — 11 new stream tests |
-| 208/208 FE tests pass | All Vitest tests green |
+| ~200/200 web Vitest pass | API routes on real Postgres in CI; hooks/merkle/math unchanged |
 | Web CI workflow | 3 parallel jobs: merkle-parity, e2e-pipeline, web-build-test |
+| Lint workflow | Vitest + build with Postgres (same as web-build-test) |
 
 ### Issues found and fixed this week
 
@@ -80,6 +91,8 @@ Phase 6 — Post-Deploy E2E:
 | Proof verification bypass in POST /api/campaigns | Critical | Multi-leaf trees where the first leaf had an empty proof array (`proof.length === 0`) skipped verification entirely. An attacker could submit a fraudulent root with no valid proofs. | Changed `else if (firstLeaf.proof.length > 0)` to `else` with an explicit rejection for empty proofs on multi-leaf campaigns. |
 | leafCount not cross-checked against leaves array | High | `data.leafCount` from the client was trusted without validating it matched `data.leaves.length`. Could store incorrect metadata. | Added explicit check: `leafCount !== leaves.length` returns 400. |
 | `apps/web/` had no `.env` file | Medium | Next.js only loads `.env` from the project root (`apps/web/`), not the monorepo root. Dev server ran without `DATABASE_URL`, causing `ECONNREFUSED` on every API call. Debugging this took ~20 min. | Symlinked `apps/web/.env -> ../../.env`. |
+| CI `/api/campaigns` 500 (`ECONNRESET`) | High | DB client enabled TLS whenever `DATABASE_URL` was set; CI Postgres does not use SSL. Health check never passed. | Host-aware SSL in `lib/db/index.ts` — skip TLS for `127.0.0.1` / `localhost`. |
+| API Vitest used mocked Drizzle | Medium | `vi.mock("@/lib/db")` hid missing Postgres in `web-build-test` / `lint` jobs. | Migrated API tests to real Postgres; added Postgres services to both workflows. |
 | Supabase pooler latency (15-30s per query) | Medium | `aws-1-ap-southeast-1.pooler.supabase.com:6543` (transaction-mode pooler) is slow from our region. E2E test POST took 29-60s per request, causing test timeouts. | Increased `connect_timeout: 30`, `max: 3` pool, and E2E test `--timeout 120000`. |
 | `Number()` truncation on u64 columns | Medium (deferred) | Drizzle schema uses `{ mode: "number" }` for `amount`, `totalSupply`, `startTime`, etc. Values above `Number.MAX_SAFE_INTEGER` (9,007,199,254,740,991) silently truncate. Safe for devnet token amounts, but will corrupt data for large mainnet supplies. | Known issue, deferred. Fix: migrate to `{ mode: "string" }` before mainnet. |
 | SSL cert verification disabled | Low | `rejectUnauthorized: false` in the DB connection config bypasses certificate validation, vulnerable to MITM in production. | Known issue, deferred. Acceptable for devnet; must fix for mainnet (use proper CA chain). |
@@ -102,13 +115,13 @@ Phase 6 — Post-Deploy E2E:
 | Metric | Value |
 |---|---|
 | SC tests | 74/74 (was 63/63) |
-| FE tests | 208/208 |
+| Web Vitest | ~200 (~69 API + ~14 bug-fix + hooks/lib/merkle) |
 | Merkle parity checks | 13/13 |
 | E2E pipeline phases | 5/5 pass |
-| CI workflows | 3 (ci.yml, lint.yml, web-ci.yml) |
+| CI workflows | 3 (ci.yml, lint.yml, web-ci.yml) — lint + web-build-test use Postgres |
 | Supabase security lints | 0 |
 | RLS policies | 9 (4 SELECT, 5 INSERT/UPDATE/DELETE) |
 | API routes deployed | 8 at velthoryn.vercel.app |
 | DB tables | 4 (campaigns, root_versions, leaves, claim_events) |
 | Curl smoke tests | 4/4 pass |
-| Week 4 -> Week 5 delta | 63 -> 74 SC tests, 0 -> 13 parity checks, 0 -> E2E pipeline verified, 0 -> deployed API, 2 -> 3 CI workflows, RLS enabled |
+| Week 4 -> Week 5 delta | 63 -> 74 SC tests, 0 -> 13 parity checks, 0 -> E2E pipeline verified, 0 -> deployed API, 2 -> 3 CI workflows, RLS enabled, API Vitest -> real Postgres |
