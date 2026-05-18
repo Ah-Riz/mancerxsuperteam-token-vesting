@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { SmoothScrollLink } from "@/components/landing/SmoothScrollLink";
 
@@ -11,9 +12,14 @@ export function Footer() {
         <div className="ftop">
           <div className="fcol brand-col">
             <div className="lp-brand">
-              <svg viewBox="0 0 512 512" style={{ width: 30, height: 30 }}>
-                <use href="#logoSm" />
-              </svg>
+              <Image
+                src="/brand/velthoryn-logo-sm.svg"
+                alt=""
+                aria-hidden="true"
+                className="lp-brand-logo lp-brand-logo-footer"
+                width={30}
+                height={30}
+              />
               <span className="name">Velthoryn</span>
             </div>
             <p>

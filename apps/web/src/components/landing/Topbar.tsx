@@ -1,10 +1,10 @@
 /**
  * Topbar - Sticky navigation bar for the Velthoryn landing page.
- * References the #logoSm symbol defined in SvgDefs.
  * All class names are prefixed with `lp-` to avoid style conflicts.
  */
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { SmoothScrollLink } from "./SmoothScrollLink";
 
@@ -23,9 +23,14 @@ export function Topbar() {
       <div className="lp-wrap lp-topbar-inner">
         <SmoothScrollLink className="lp-brand" href="#top" onNavigate={() => setMenuOpen(false)}>
           <span className="lp-brand-mark">
-            <svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet">
-              <use href="#logoSm" />
-            </svg>
+            <Image
+              src="/brand/velthoryn-logo-sm.svg"
+              alt=""
+              aria-hidden="true"
+              className="lp-brand-logo"
+              width={28}
+              height={28}
+            />
           </span>
           <span className="name">Velthoryn</span>
         </SmoothScrollLink>
