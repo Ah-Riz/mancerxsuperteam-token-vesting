@@ -46,6 +46,14 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
+    // Cross-check declared leafCount matches actual leaves
+    if (data.leafCount !== data.leaves.length) {
+      return NextResponse.json(
+        { error: `leafCount (${data.leafCount}) does not match leaves array length (${data.leaves.length})` },
+        { status: 400 },
+      );
+    }
+
     // Verify first leaf against declared merkleRoot
     const firstLeaf = data.leaves[0];
     const leafForHash = {
@@ -70,8 +78,14 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-    } else if (firstLeaf.proof.length > 0) {
-      // Multi-leaf tree: verify first leaf's proof
+    } else {
+      // Multi-leaf tree: verify first leaf's proof (required)
+      if (firstLeaf.proof.length === 0) {
+        return NextResponse.json(
+          { error: "Multi-leaf campaign requires proof for first leaf" },
+          { status: 400 },
+        );
+      }
       const proofBufs = firstLeaf.proof.map((sibling) => Buffer.from(sibling));
       const valid = verifyProof(leafHash, proofBufs, firstLeaf.leafIndex, rootBuf);
       if (!valid) {
@@ -97,41 +111,36 @@ export async function POST(request: NextRequest) {
     }));
 
     return await db.transaction(async (tx) => {
-      // Try insert, catch unique constraint violation for idempotency
-      let campaignId: number;
-      try {
-        const [inserted] = await tx
-          .insert(campaigns)
-          .values({
-            treeAddress: data.treeAddress,
-            creator: data.creator,
-            mint: data.mint,
-            campaignId: data.campaignId,
-            merkleRoot: data.merkleRoot,
-            leafCount: data.leafCount,
-            totalSupply: Number(data.totalSupply),
-            cancellable: data.cancellable,
-            createdAt: data.createdAt,
-            metadata: data.metadata ?? null,
-          })
-          .returning({ id: campaigns.id });
-        campaignId = inserted.id;
-      } catch (e: unknown) {
-        // Check for unique constraint violation (PostgreSQL error code 23505)
-        const err = e as { code?: string };
-        if (err?.code === "23505") {
-          const [existing] = await tx
-            .select({ id: campaigns.id })
-            .from(campaigns)
-            .where(eq(campaigns.treeAddress, data.treeAddress))
-            .limit(1);
-          return NextResponse.json(
-            { ok: true, campaignId: existing.id },
-            { status: 200 },
-          );
-        }
-        throw e;
+      // Idempotent retry: check before insert (catching 23505 leaves the tx aborted in Postgres)
+      const [existing] = await tx
+        .select({ id: campaigns.id })
+        .from(campaigns)
+        .where(eq(campaigns.treeAddress, data.treeAddress))
+        .limit(1);
+
+      if (existing) {
+        return NextResponse.json(
+          { ok: true, campaignId: existing.id },
+          { status: 200 },
+        );
       }
+
+      const [inserted] = await tx
+        .insert(campaigns)
+        .values({
+          treeAddress: data.treeAddress,
+          creator: data.creator,
+          mint: data.mint,
+          campaignId: data.campaignId,
+          merkleRoot: data.merkleRoot,
+          leafCount: data.leafCount,
+          totalSupply: Number(data.totalSupply),
+          cancellable: data.cancellable,
+          createdAt: data.createdAt,
+          metadata: data.metadata ?? null,
+        })
+        .returning({ id: campaigns.id });
+      const campaignId = inserted.id;
 
       // Insert root version (version = 1)
       const [insertedRootVersion] = await tx

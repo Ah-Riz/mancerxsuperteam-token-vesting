@@ -34,7 +34,8 @@ velthoryn/
 
 **Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
-**Test results: 74/74 SC tests PASS, 208/208 FE tests PASS** (stream checklist: T58 50% withdraw, T59 double-withdraw guard)
+**Test results: 74/74 SC tests PASS, ~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
+**BE-SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) flow through prepare → POST → GET proof → verify against deployed API. RLS enabled on all Supabase tables.
 - Devnet: 58+ passing; clock-dependent cases run on bankrun
 - Localnet (bankrun): `tests/vesting.clock.spec.ts` — T17–T20, T25, T47, T55–T59, EXPLOIT 4
 
@@ -102,9 +103,12 @@ Next.js 15 dApp with wallet integration, vesting stream creation, and token clai
 
 ```bash
 cd apps/web
-cp .env.example .env   # fill in your keys
+cp .env.example .env   # fill in your keys (or symlink ../../.env)
 pnpm dev               # http://localhost:3000
-pnpm test              # 208 Vitest tests
+
+# Vitest — API tests need Postgres (see docs/TESTING.md)
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+pnpm db:push && pnpm test
 ```
 
 ### Pages
@@ -127,6 +131,8 @@ Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). 
 | `/api/campaigns/[treeAddress]/root-versions` | GET | Root version history |
 | `/api/beneficiary/[address]/campaigns` | GET | All campaigns for address |
 | `/api/admin/sync` | POST | Indexer: backfill claim events (auth: x-admin-key) |
+
+All routes deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Supabase tables have Row Level Security enabled (read-public, write-service-role).
 
 See [`docs/BACKEND_API.md`](docs/BACKEND_API.md) for full API documentation.
 
@@ -154,8 +160,13 @@ anchor deploy --provider.cluster devnet
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` + `pnpm test:localnet` on every push and PR.
-`.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
+| Workflow | What it runs |
+|----------|----------------|
+| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + `pnpm test:localnet` (74 SC tests) |
+| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `drizzle-kit push`) |
+| [`web-ci.yml`](.github/workflows/web-ci.yml) | 3 parallel jobs: merkle parity, E2E pipeline (Postgres + dev server + `test-be-merkle-pipeline.ts`), web build + Vitest (Postgres) |
+
+All web jobs use `DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci` and host-aware SSL (TLS for Supabase, plain TCP for local CI Postgres).
 
 ## License
 

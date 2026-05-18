@@ -289,22 +289,24 @@ Full form for creating single-beneficiary vesting streams. Fields: campaign ID, 
 
 Recipient dashboard for claiming vested tokens. Fetches `VestingTree` account on-chain, computes vested amount client-side using the same math as `schedule.rs`, shows progress bar and claimable amount. Submits `withdraw` instruction.
 
-### Frontend Tests (Vitest)
+### Web Tests (Vitest)
 
-38 unit tests covering:
-- Vesting math (cliff/linear/milestone, cancel clamp, claimable) — mirrors Rust `schedule.rs`
-- PDA derivation (VestingTree, VaultAuthority, ClaimRecord)
-- Merkle tree (encodeLeaf, hashLeaf, golden vector gate)
+~200 tests in `apps/web/` — see [`TESTING.md`](TESTING.md). Highlights:
+- **API routes** (`tests/api/*`) — real Postgres; campaign CRUD, proofs, claims, beneficiary, admin sync
+- Vesting math, PDA derivation, Merkle builder (golden vector gate)
+- React hooks (mocked `fetch`, no DB)
 
-Run with `npx vitest run` from `apps/web/`.
+Requires `DATABASE_URL` for the full suite. CI provides Postgres in `web-ci.yml` and `lint.yml`.
+
+```bash
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+cd apps/web && pnpm db:push && pnpm test
+```
 
 ## Where to ask
 
 - On-chain bugs / instruction questions → Lana (`programs/vesting/`).
 - Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
-- Frontend / UI questions → Geral (`apps/web/`).
-- IDL / TS types regen → re-run `anchor build`.
-- On-chain bugs / instruction questions → Lana (`programs/vesting/`).
-- Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
+- Backend API / DB / tests → Lana (`apps/web/src/app/api/`, `docs/BACKEND_API.md`).
 - Frontend / UI questions → Geral (`apps/web/`).
 - IDL / TS types regen → re-run `anchor build`.

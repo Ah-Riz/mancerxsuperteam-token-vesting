@@ -404,3 +404,26 @@ API_KEY=
 PINATA_JWT=
 PINATA_GATEWAY_URL=https://gateway.pinata.cloud
 ```
+
+---
+
+## 9. Testing
+
+| Layer | Command | Database |
+|-------|---------|----------|
+| API Vitest | `cd apps/web && pnpm test` | **Real Postgres** — `tests/api/backend.test.ts`, `bug-fix-validation.test.ts` use `createCampaignViaPost` / `resetDb()` (no Drizzle mocks) |
+| Merkle parity | `pnpm tsx scripts/test-merkle-parity.ts` | None (pure TS) |
+| E2E pipeline | `pnpm tsx scripts/test-be-merkle-pipeline.ts [--url URL]` | Real API + DB (local dev server or Vercel) |
+
+Local Postgres for Vitest:
+
+```bash
+docker run -d --name vesting-pg -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci \
+  -e POSTGRES_DB=ci -p 5432:5432 postgres:15
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+cd apps/web && pnpm db:push && pnpm test
+```
+
+**RLS:** Enabled on all 4 tables (read-public, write-service-role). **SSL:** `apps/web/src/lib/db/index.ts` enables TLS only for remote hosts; `127.0.0.1` / `localhost` skip TLS (required for CI Postgres).
+
+See [`TESTING.md`](TESTING.md) for full suite breakdown.

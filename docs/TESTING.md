@@ -5,7 +5,7 @@
 **265 tests total** — all passing (on-chain security suite includes 11 exploit tests).
 
 - On-chain (Anchor): 70 tests across 5 files
-- Frontend (Vitest): 208 tests across 19 files
+- Web (Vitest): ~200 tests across 20 files (API routes use real Postgres in CI)
 - Trident fuzz: smoke test in CI (`trident-tests/fuzz_vesting`)
 
 | Test File | Tests | Purpose |
@@ -110,19 +110,37 @@ describe("clock test", () => {
 });
 ```
 
-## Frontend Tests (Vitest)
+## Web Tests (Vitest)
+
+API route tests (`tests/api/*`) use a **real Postgres** database. CI provides Postgres via service containers in `web-ci.yml` and `lint.yml`. Hooks, merkle, and math tests do not need a database.
+
+### Local setup (Postgres required for full suite)
+
+```bash
+docker run -d --name vesting-pg \
+  -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ci \
+  -p 5432:5432 postgres:15
+
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+cd apps/web && pnpm drizzle-kit push && pnpm test
+```
 
 ```bash
 cd apps/web
-pnpm test              # 208 passing
+pnpm test              # full suite (requires DATABASE_URL)
 pnpm test -- --reporter=verbose  # detailed output
 ```
 
+`tests/globalSetup.ts` runs `drizzle-kit push` locally when `DATABASE_URL` is set (skipped when `CI=true` — workflows push schema explicitly). Each API test file calls `resetDb()` in `beforeEach` to truncate tables.
+
+**Test helpers:** `tests/helpers/db.ts` (`resetDb`), `tests/helpers/fixtures.ts` (`createCampaignViaPost`, `seedClaimEvent`), `tests/helpers/requests.ts` (shared campaign payloads).
+
 | Test File | Tests | Purpose |
 |-----------|-------|---------|
-| `tests/api/backend.test.ts` | 76 | API routes — campaigns, claims, proofs, beneficiary, admin sync |
+| `tests/api/backend.test.ts` | ~69 | API routes — campaigns, claims, proofs, beneficiary, admin sync (real DB) |
 | `tests/math/vesting.test.ts` | 23 | Vesting math — linear, cliff, milestone, cancel clamp, edge cases |
-| `tests/api/bug-fix-validation.test.ts` | 14 | Input validation — address format, amount bounds, date logic |
+| `tests/api/bug-fix-validation.test.ts` | ~14 | Bug-fix regressions — validation, indexer cursor, real DB transactions |
+| `tests/lib/db-ssl.test.ts` | 3 | DB SSL host detection (local vs Supabase) |
 | `tests/anchor/pda.test.ts` | 10 | PDA derivation — VestingTree, VaultAuthority, ClaimRecord seeds |
 | `tests/lib/adapters.test.ts` | 10 | Anchor adapter utils — account parsing, type conversion |
 | `tests/lib/anchor-client.test.ts` | 9 | Anchor client — program init, instruction building |
@@ -139,6 +157,42 @@ pnpm test -- --reporter=verbose  # detailed output
 | `tests/datetime.test.ts` | 1 | Date/time formatting utilities |
 | `tests/stream-persist.test.ts` | 1 | Stream state persistence |
 | `tests/vesting-errors.test.ts` | 5 | Error formatting and mapping |
+
+## Merkle Parity Test
+
+```bash
+pnpm tsx scripts/test-merkle-parity.ts
+# Expected: 13/13 checks pass (roots, proofs, cross-verification)
+```
+
+Validates that `clients/ts/src/merkle.ts` and `apps/web/src/lib/merkle/builder.ts` produce byte-identical roots and proofs for Cliff, Linear, and Milestone release types.
+
+## E2E Merkle Pipeline Test
+
+```bash
+# Start dev server first:
+cd apps/web && pnpm dev
+
+# In another terminal:
+pnpm tsx scripts/test-be-merkle-pipeline.ts
+# Expected: ALL PASS (prepare, POST 201, GET campaigns, GET proofs 3/3, verifyProof 3/3)
+
+# Against deployed URL:
+pnpm tsx scripts/test-be-merkle-pipeline.ts --url https://your-app.vercel.app --timeout 120000
+```
+
+Validates the full BE-SC pipeline: `prepareCampaign` → POST campaign → GET proof per beneficiary → verify proof against root. Tests 3 release types (Cliff, Linear, Milestone).
+
+CI runs this in `.github/workflows/web-ci.yml` using a Postgres service container.
+
+## CI workflows (web + API)
+
+| Job | Workflow | Postgres? | Notes |
+|-----|----------|-----------|-------|
+| `merkle-parity` | `web-ci.yml` | No | `scripts/test-merkle-parity.ts` (13 checks) |
+| `e2e-pipeline` | `web-ci.yml` | Yes | `drizzle-kit push` → dev server → `test-be-merkle-pipeline.ts` |
+| `web-build-test` | `web-ci.yml` | Yes | `drizzle-kit push` → Vitest → `next build` |
+| `lint` | `lint.yml` | Yes | clippy + lint + Vitest + build (same DB URL) |
 
 ---
 
