@@ -142,6 +142,16 @@ export const claimEvents = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// waitlist -- email waitlist
+// ---------------------------------------------------------------------------
+
+export const waitlist = pgTable("waitlist", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Type exports for use in route handlers
 // ---------------------------------------------------------------------------
 

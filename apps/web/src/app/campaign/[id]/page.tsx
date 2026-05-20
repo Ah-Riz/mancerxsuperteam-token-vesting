@@ -12,10 +12,20 @@ const WalletMultiButton = dynamic(
 import { BN } from "@coral-xyz/anchor";
 import { useVestingProgram } from "@/hooks/useVestingProgram";
 import { useProofLookup } from "@/hooks/useProofLookup";
+import { useClaimRecord } from "@/hooks/useClaimRecord";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { unixToDatetimeLocal, datetimeLocalToUnix } from "@/lib/stream/datetime";
 import { loadStreamScheduleLocal } from "@/lib/stream/persist";
+import { CancelConfirmDialog } from "@/components/campaign/CancelConfirmDialog";
+import { TriggerMilestoneButton } from "@/components/campaign/TriggerMilestoneButton";
+import {
+  getVestingTypeLabel,
+  getVestingTypeBadgeColor,
+  formatCountdown,
+  getWithdrawDisabledReason,
+} from "@/lib/vesting/display";
+import { isMilestoneTriggered } from "@/lib/vesting/milestone";
 
 type TreeState = {
   creator: PublicKey;
@@ -112,12 +122,17 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     { type: "idle" } | { type: "loading" } | { type: "success"; sig: string } | { type: "error"; msg: string }
   >({ type: "idle" });
 
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+
   const isSingleLeaf = treeState?.leafCount === 1;
   const beneficiaryKey = publicKey?.toBase58();
   const proofQuery = useProofLookup(
     isSingleLeaf ? treeAddress : undefined,
     isSingleLeaf ? beneficiaryKey : undefined,
   );
+
+  const claimRecordQuery = useClaimRecord(treeAddress, beneficiaryKey);
 
   const scheduleLocked =
     isSingleLeaf &&
@@ -218,6 +233,54 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const claimable = vested > totalClaimed ? vested - totalClaimed : 0n;
   const progress = progressPercent(vested, totalSupply);
 
+  const isCreator = publicKey && treeState ? publicKey.equals(treeState.creator) : false;
+  const milestoneBitmap = claimRecordQuery.data?.milestoneBitmap
+    ? new Uint8Array(claimRecordQuery.data.milestoneBitmap)
+    : new Uint8Array(32);
+  const milestoneTriggered = isMilestoneTriggered(milestoneBitmap, Number(milestoneIdx));
+
+  const withdrawDisabledReason = getWithdrawDisabledReason({
+    loading: txStatus.type === "loading",
+    paused: treeState?.paused ?? false,
+    claimable,
+    cancelledAt: cancelledAtBigint,
+    releaseType,
+    nowTs,
+    cliffTs: cliffTsBigint,
+  });
+
+  async function handleCancel() {
+    if (!program || !publicKey || !treeState) return;
+    setCancelLoading(true);
+    try {
+      const treePubkey = new PublicKey(treeAddress);
+      const [vaultAuthority] = derivePda(["vault_authority", treePubkey.toBuffer()]);
+
+      const { getAssociatedTokenAddressSync } = await import("@solana/spl-token");
+      const creatorAta = getAssociatedTokenAddressSync(treeState.mint, publicKey);
+
+      const sig = await program.methods
+        .cancelCampaign()
+        .accounts({
+          cancelAuthority: publicKey,
+          vestingTree: treePubkey,
+          vaultAuthority,
+          vault: treeState.vault,
+          creatorTokenAccount: creatorAta,
+          mint: treeState.mint,
+        })
+        .rpc();
+
+      setTxStatus({ type: "success", sig });
+      setCancelOpen(false);
+      fetchTree();
+    } catch (err: unknown) {
+      setTxStatus({ type: "error", msg: formatVestingError(err) });
+    } finally {
+      setCancelLoading(false);
+    }
+  }
+
   async function handleWithdraw() {
     if (!program || !publicKey || !treeState) return;
 
@@ -306,6 +369,24 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                 treeState.cancelledAt ? "Cancelled" : "Active"
             } />
           </div>
+
+          {cliffTime && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`text-xs px-2 py-1 rounded-full border ${getVestingTypeBadgeColor(releaseType)}`}>
+                {getVestingTypeLabel(releaseType)}
+              </span>
+              {releaseType === 0 && nowTs < cliffTsBigint && (
+                <span className="text-xs text-amber-400">
+                  Cliff in {formatCountdown(cliffTsBigint, nowTs)}
+                </span>
+              )}
+              {releaseType === 2 && (
+                <span className={`text-xs ${milestoneTriggered ? "text-green-400" : "text-gray-500"}`}>
+                  {milestoneTriggered ? "Milestone unlocked" : "Milestone locked"}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 space-y-4">
             <h2 className="text-lg font-medium">Your Vesting Schedule</h2>
@@ -415,17 +496,37 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
               <button
                 onClick={handleWithdraw}
-                disabled={txStatus.type === "loading" || claimable === 0n || treeState.paused}
+                disabled={!!withdrawDisabledReason}
                 className="w-full py-3 bg-purple-600 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {txStatus.type === "loading"
-                  ? "Claiming..."
-                  : claimable === 0n
-                    ? "Nothing to claim"
-                    : treeState.paused
-                      ? "Campaign paused"
-                      : `Claim ${claimable.toString()} tokens`}
+                {withdrawDisabledReason ?? `Claim ${claimable.toString()} tokens`}
               </button>
+
+              <TriggerMilestoneButton
+                isCreator={isCreator}
+                isMilestoneType={releaseType === 2}
+                alreadyTriggered={milestoneTriggered}
+                milestoneIdx={Number(milestoneIdx)}
+              />
+
+              {isCreator && !treeState.cancelledAt && (
+                <button
+                  onClick={() => setCancelOpen(true)}
+                  className="w-full py-2 rounded-lg border border-red-700 text-red-400 hover:bg-red-900/30 transition text-sm"
+                >
+                  Cancel Stream
+                </button>
+              )}
+
+              <CancelConfirmDialog
+                isOpen={cancelOpen}
+                onConfirm={handleCancel}
+                onClose={() => setCancelOpen(false)}
+                isLoading={cancelLoading}
+                totalSupply={totalSupply}
+                totalClaimed={totalClaimed}
+                vestedAmount={vested}
+              />
 
               {txStatus.type === "success" && (
                 <div className="p-4 bg-green-900/30 border border-green-700 rounded-lg">

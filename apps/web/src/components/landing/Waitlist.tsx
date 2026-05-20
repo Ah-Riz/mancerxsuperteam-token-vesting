@@ -4,16 +4,46 @@ import { useState, type FormEvent } from "react";
 
 export function Waitlist() {
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
-    const email = (form.elements.namedItem("email") as HTMLInputElement).value.trim();
+    const emailInput = form.elements.namedItem("email") as HTMLInputElement;
+    const email = emailInput.value.trim();
+
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      (form.elements.namedItem("email") as HTMLInputElement).focus();
+      emailInput.focus();
       return;
     }
-    setSubmitted(true);
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const payload = (await response.json()) as { message?: string; error?: string };
+
+      if (!response.ok) {
+        setError(payload.error ?? "Gagal menyimpan email.");
+        return;
+      }
+
+      setSubmitted(true);
+      form.reset();
+    } catch {
+      setError("Tidak bisa menghubungi server.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -39,9 +69,11 @@ export function Waitlist() {
                   placeholder="you@yourproject.xyz"
                   required
                   autoComplete="email"
+                  disabled={submitting}
+                  suppressHydrationWarning
                 />
-                <button type="submit">
-                  Join waitlist <span className="arrow">→</span>
+                <button type="submit" disabled={submitting} suppressHydrationWarning>
+                  {submitting ? "Joining..." : <>Join waitlist <span className="arrow">→</span></>}
                 </button>
               </form>
             ) : (
@@ -49,6 +81,7 @@ export function Waitlist() {
                 ✓ You&apos;re on the list. We&apos;ll reach out soon.
               </div>
             )}
+            {error ? <div className="lp-waitlist-error">{error}</div> : null}
             <div className="lp-waitlist-meta">
               <div>
                 <i style={{ background: "var(--lp-green)" }} /> <b>Founding</b>{" "}
