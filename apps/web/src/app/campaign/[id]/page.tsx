@@ -275,6 +275,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       setCancelOpen(false);
       fetchTree();
     } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        /User rejected|Connection rejected/i.test(err.message)
+      ) {
+        setTxStatus({ type: "idle" });
+        return;
+      }
       setTxStatus({ type: "error", msg: formatVestingError(err) });
     } finally {
       setCancelLoading(false);
@@ -326,6 +333,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       setTxStatus({ type: "success", sig });
       fetchTree();
     } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        /User rejected|Connection rejected/i.test(err.message)
+      ) {
+        setTxStatus({ type: "idle" });
+        return;
+      }
       setTxStatus({ type: "error", msg: formatVestingError(err) });
     }
   }

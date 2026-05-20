@@ -105,32 +105,67 @@ export default function CreateStreamPage() {
       ]);
       const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
 
-      const { getAssociatedTokenAddressSync } = await import("@solana/spl-token");
+      const { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
+      const { SystemProgram, SYSVAR_RENT_PUBKEY } = await import("@solana/web3.js");
       const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
       const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
 
+      console.log("=== DEBUG ACCOUNTS ===");
+      console.log("creator:", publicKey.toBase58());
+      console.log("vestingTree:", vestingTree.toBase58());
+      console.log("vaultAuthority:", vaultAuthority.toBase58());
+      console.log("vault:", vault.toBase58());
+      console.log("sourceAta:", sourceAta.toBase58());
+      console.log("mint:", mintKey.toBase58());
+
+      const accountsObj = {
+        creator: publicKey,
+        vestingTree,
+        vaultAuthority,
+        vault,
+        sourceAta,
+        mint: mintKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      };
+
+      const argsObj = {
+        campaignId: campaignIdBN,
+        beneficiary: beneficiaryKey,
+        amount: amountBN,
+        releaseType,
+        startTime: startTs,
+        cliffTime: cliffTs,
+        endTime: endTs,
+        milestoneIdx: Number(milestoneIdx),
+        cancellable,
+        cancelAuthority: cancellable ? publicKey : null,
+        pauseAuthority: null,
+      };
+
+      const ix = await program.methods
+        .createStream(argsObj)
+        .accounts(accountsObj)
+        .instruction();
+
+      console.log("=== RAW INSTRUCTION ACCOUNTS ===");
+      const expectedOrder = [
+        "creator", "vesting_tree", "vault_authority", "vault",
+        "source_ata", "mint", "token_program", "associated_token_program",
+        "system_program", "rent",
+      ];
+      ix.keys.forEach((key, i) => {
+        const expected = expectedOrder[i] || `unknown_${i}`;
+        console.log(
+          `[${i}] ${expected}: ${key.pubkey.toBase58()} (writable=${key.isWritable}, signer=${key.isSigner})`,
+        );
+      });
+
       const sig = await program.methods
-        .createStream({
-          campaignId: campaignIdBN,
-          beneficiary: beneficiaryKey,
-          amount: amountBN,
-          releaseType,
-          startTime: startTs,
-          cliffTime: cliffTs,
-          endTime: endTs,
-          milestoneIdx: Number(milestoneIdx),
-          cancellable,
-          cancelAuthority: cancellable ? publicKey : null,
-          pauseAuthority: null,
-        })
-        .accounts({
-          creator: publicKey,
-          vestingTree,
-          vaultAuthority,
-          vault,
-          sourceAta,
-          mint: mintKey,
-        })
+        .createStream(argsObj)
+        .accounts(accountsObj)
         .rpc();
 
       const treeAddress = vestingTree.toBase58();
@@ -166,6 +201,17 @@ export default function CreateStreamPage() {
 
       setTxStatus({ type: "success", sig, treeAddress });
     } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        /User rejected|Connection rejected/i.test(err.message)
+      ) {
+        setTxStatus({ type: "idle" });
+        return;
+      }
+      console.error("createStream raw error:", err);
+      if (err && typeof err === "object" && "logs" in err) {
+        console.error("Transaction logs:", (err as { logs: string[] }).logs);
+      }
       setTxStatus({ type: "error", msg: formatVestingError(err) });
     }
   }

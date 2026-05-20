@@ -4,7 +4,7 @@
     "name": "vesting",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Mancer Vesting — Merkle-compressed Solana token distribution with vesting and clawback"
+    "description": "Velthoryn — Merkle-compressed Solana token distribution with vesting and clawback"
   },
   "instructions": [
     {
@@ -26,7 +26,35 @@
         },
         {
           "name": "vesting_tree",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.creator",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.mint",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.campaign_id",
+                "account": "VestingTree"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -143,6 +171,9 @@
           "writable": true
         },
         {
+          "name": "mint"
+        },
+        {
           "name": "beneficiary_ata",
           "writable": true,
           "pda": {
@@ -233,9 +264,6 @@
           }
         },
         {
-          "name": "mint"
-        },
-        {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
@@ -321,12 +349,7 @@
           }
         }
       ],
-      "args": [
-        {
-          "name": "expected_total",
-          "type": "u64"
-        }
-      ]
+      "args": []
     },
     {
       "name": "create_campaign",
@@ -345,6 +368,9 @@
           "name": "creator",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "mint"
         },
         {
           "name": "vesting_tree",
@@ -497,9 +523,6 @@
           }
         },
         {
-          "name": "mint"
-        },
-        {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
@@ -544,6 +567,9 @@
           "name": "creator",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "mint"
         },
         {
           "name": "vesting_tree",
@@ -698,9 +724,6 @@
         {
           "name": "source_ata",
           "writable": true
-        },
-        {
-          "name": "mint"
         },
         {
           "name": "token_program",
@@ -859,7 +882,35 @@
         },
         {
           "name": "vesting_tree",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.creator",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.mint",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.campaign_id",
+                "account": "VestingTree"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -883,7 +934,35 @@
         },
         {
           "name": "vesting_tree",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.creator",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.mint",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.campaign_id",
+                "account": "VestingTree"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -907,7 +986,35 @@
         },
         {
           "name": "vesting_tree",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.creator",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.mint",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.campaign_id",
+                "account": "VestingTree"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1038,6 +1145,9 @@
           "writable": true
         },
         {
+          "name": "mint"
+        },
+        {
           "name": "beneficiary_ata",
           "writable": true,
           "pda": {
@@ -1128,9 +1238,6 @@
           }
         },
         {
-          "name": "mint"
-        },
-        {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
@@ -1177,7 +1284,35 @@
         },
         {
           "name": "vesting_tree",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.creator",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.mint",
+                "account": "VestingTree"
+              },
+              {
+                "kind": "account",
+                "path": "vesting_tree.campaign_id",
+                "account": "VestingTree"
+              }
+            ]
+          }
         },
         {
           "name": "vault_authority",
@@ -1521,6 +1656,11 @@
       "code": 6028,
       "name": "NotSingleStream",
       "msg": "This instruction only works on single-recipient streams"
+    },
+    {
+      "code": 6029,
+      "name": "ProofTooLong",
+      "msg": "Merkle proof exceeds maximum allowed length for this campaign"
     }
   ],
   "types": [
@@ -1635,6 +1775,19 @@
           },
           {
             "name": "claimed_amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_entitled",
+            "docs": [
+              "Total entitled from the Merkle leaf. Set once at first claim.",
+              "Used by close_claim_record to verify full vesting without trusting",
+              "a caller-supplied value.",
+              "",
+              "NOTE: Adding this field is a layout-breaking change. Existing",
+              "on-chain ClaimRecords predating this field cannot be deserialized",
+              "correctly and require a migration (e.g. resize + fill or close + re-claim)."
+            ],
             "type": "u64"
           },
           {

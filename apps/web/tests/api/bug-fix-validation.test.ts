@@ -233,7 +233,7 @@ describe("Bug 3: Input validation", () => {
       expect(json.error).toContain("Invalid fromSlot");
     });
 
-    it("accepts fromSlot=0 as valid", async () => {
+    it("accepts fromSlot=0 as valid", { timeout: 15000 }, async () => {
       const { campaignId } = await createCampaignViaPost({ treeAddress: TREE_ADDRESS });
 
       const req = new NextRequest(

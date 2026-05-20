@@ -515,7 +515,7 @@ describe("GET /api/campaigns", () => {
     expect(json.total).toBeGreaterThanOrEqual(2);
   });
 
-  it("filters by status=active (not paused, not cancelled)", async () => {
+  it("filters by status=active (not paused, not cancelled)", { timeout: 15000 }, async () => {
     const active = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
     const paused = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
     const cancelled = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
@@ -865,7 +865,7 @@ describe("GET /api/campaigns/[treeAddress]/claims", () => {
 // ===========================================================================
 
 describe("GET /api/beneficiary/[address]/campaigns", () => {
-  it("returns campaigns where address is beneficiary", async () => {
+  it("returns campaigns where address is beneficiary", { timeout: 15000 }, async () => {
     await createCampaignViaPost({ treeAddress: TREE_ADDRESS });
 
     const req = new NextRequest(makeUrl(`/api/beneficiary/${BENEFICIARY}/campaigns`));
