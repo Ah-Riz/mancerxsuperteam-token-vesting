@@ -20,6 +20,11 @@ import {
   indexStreamCampaign,
   saveStreamScheduleLocal,
 } from "@/lib/stream/persist";
+import {
+  validateCreateStreamForm,
+  hasErrors,
+  type FormErrors,
+} from "@/lib/validation/stream-form";
 
 const RELEASE_TYPES = [
   { value: 0, label: "Cliff", desc: "Full unlock at cliff time" },
@@ -53,9 +58,30 @@ export default function CreateStreamPage() {
     | { type: "error"; msg: string }
   >({ type: "idle" });
 
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!program || !publicKey) return;
+
+    const startUnix = startTime ? toUnixTs(startTime) : NaN;
+    const cliffUnix = cliffTime ? toUnixTs(cliffTime) : NaN;
+    const endUnix = endTime ? toUnixTs(endTime) : NaN;
+
+    const errors = validateCreateStreamForm({
+      beneficiary,
+      mintAddress,
+      amount,
+      campaignId,
+      startUnix,
+      cliffUnix,
+      endUnix,
+      releaseType,
+      milestoneIdx,
+    });
+
+    setFormErrors(errors);
+    if (hasErrors(errors)) return;
 
     setTxStatus({ type: "loading" });
 
@@ -162,9 +188,10 @@ export default function CreateStreamPage() {
               min="1"
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:border-purple-500 outline-none"
+              className={`w-full bg-gray-900 border rounded-lg px-4 py-2 focus:border-purple-500 outline-none ${formErrors.campaignId ? "border-red-500" : "border-gray-700"}`}
               required
             />
+            {formErrors.campaignId && <p className="text-xs text-red-400 mt-1">{formErrors.campaignId}</p>}
           </div>
 
           <div>
@@ -174,9 +201,10 @@ export default function CreateStreamPage() {
               placeholder="Token mint public key"
               value={mintAddress}
               onChange={(e) => setMintAddress(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:border-purple-500 outline-none font-mono text-sm"
+              className={`w-full bg-gray-900 border rounded-lg px-4 py-2 focus:border-purple-500 outline-none font-mono text-sm ${formErrors.mintAddress ? "border-red-500" : "border-gray-700"}`}
               required
             />
+            {formErrors.mintAddress && <p className="text-xs text-red-400 mt-1">{formErrors.mintAddress}</p>}
           </div>
 
           <div>
@@ -186,9 +214,10 @@ export default function CreateStreamPage() {
               placeholder="Recipient wallet address"
               value={beneficiary}
               onChange={(e) => setBeneficiary(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:border-purple-500 outline-none font-mono text-sm"
+              className={`w-full bg-gray-900 border rounded-lg px-4 py-2 focus:border-purple-500 outline-none font-mono text-sm ${formErrors.beneficiary ? "border-red-500" : "border-gray-700"}`}
               required
             />
+            {formErrors.beneficiary && <p className="text-xs text-red-400 mt-1">{formErrors.beneficiary}</p>}
           </div>
 
           <div>
@@ -198,9 +227,10 @@ export default function CreateStreamPage() {
               placeholder="e.g. 1000000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:border-purple-500 outline-none"
+              className={`w-full bg-gray-900 border rounded-lg px-4 py-2 focus:border-purple-500 outline-none ${formErrors.amount ? "border-red-500" : "border-gray-700"}`}
               required
             />
+            {formErrors.amount && <p className="text-xs text-red-400 mt-1">{formErrors.amount}</p>}
           </div>
 
           <div>
@@ -255,6 +285,7 @@ export default function CreateStreamPage() {
               />
             </div>
           </div>
+          {formErrors.schedule && <p className="text-xs text-red-400 -mt-4">{formErrors.schedule}</p>}
 
           {releaseType === 2 && (
             <div>
@@ -265,8 +296,9 @@ export default function CreateStreamPage() {
                 max="255"
                 value={milestoneIdx}
                 onChange={(e) => setMilestoneIdx(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:border-purple-500 outline-none"
+                className={`w-full bg-gray-900 border rounded-lg px-4 py-2 focus:border-purple-500 outline-none ${formErrors.milestoneIdx ? "border-red-500" : "border-gray-700"}`}
               />
+              {formErrors.milestoneIdx && <p className="text-xs text-red-400 mt-1">{formErrors.milestoneIdx}</p>}
             </div>
           )}
 

@@ -116,5 +116,28 @@ export function formatVestingError(err: unknown): string {
     return USER_MESSAGES[vestingKey];
   }
 
+  if (raw.includes("BlockhashNotFound") || raw.includes("TransactionExpiredBlockheightExceeded")) {
+    return "Transaction expired. Please try again.";
+  }
+
+  if (raw.includes("Failed to fetch") || raw.includes("NetworkError") || raw.includes("ECONNREFUSED")) {
+    return "Network error. Check your connection and try again.";
+  }
+
   return raw;
+}
+
+const RETRYABLE_PATTERNS = [
+  "BlockhashNotFound",
+  "TransactionExpiredBlockheightExceeded",
+  "Failed to fetch",
+  "NetworkError",
+  "ECONNREFUSED",
+  "timeout",
+  "ETIMEDOUT",
+];
+
+export function isRetryableError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err);
+  return RETRYABLE_PATTERNS.some((p) => raw.includes(p));
 }

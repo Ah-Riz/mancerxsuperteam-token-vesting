@@ -60,6 +60,7 @@ export function Topbar() {
             aria-expanded={menuOpen}
             aria-controls="lp-mobile-nav"
             onClick={() => setMenuOpen((open) => !open)}
+            suppressHydrationWarning
           >
             <span />
             <span />

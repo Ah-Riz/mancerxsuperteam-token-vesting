@@ -868,6 +868,10 @@ body:has(.landing-page)::-webkit-scrollbar {
   white-space: nowrap;
 }
 .lp-waitlist-form button:hover { background: #8b50f1; }
+.lp-waitlist-form button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
 .lp-waitlist-form button:active { transform: scale(0.98); }
 .lp-waitlist-form button .arrow { font-family: "JetBrains Mono", monospace; opacity: 0.8; }
 .lp-waitlist-success {
@@ -882,6 +886,16 @@ body:has(.landing-page)::-webkit-scrollbar {
   margin: 0 auto;
 }
 .lp-waitlist-success.show { display: block; }
+.lp-waitlist-error {
+  color: #fecdd3;
+  font-size: 15px;
+  padding: 14px 18px;
+  background: rgba(159, 18, 57, 0.18);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: 10px;
+  max-width: 540px;
+  margin: 18px auto 0;
+}
 .lp-waitlist-meta {
   margin-top: 28px;
   display: flex; justify-content: center; gap: 28px;

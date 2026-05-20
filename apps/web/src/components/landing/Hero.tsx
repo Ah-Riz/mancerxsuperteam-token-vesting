@@ -23,7 +23,9 @@ export function Hero() {
               <SmoothScrollLink href="#waitlist" className="lp-btn primary">
                 Join waitlist <span className="arrow">&rarr;</span>
               </SmoothScrollLink>
-              <button className="lp-btn ghost">Read the docs</button>
+              <button className="lp-btn ghost" suppressHydrationWarning>
+                Read the docs
+              </button>
             </div>
             <div className="meta">
               <div>Audit by Mr G and Mr L</div>
