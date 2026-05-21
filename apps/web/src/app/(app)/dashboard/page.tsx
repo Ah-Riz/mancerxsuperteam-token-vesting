@@ -64,7 +64,7 @@ function ActionCard({
   );
 }
 
-function formatWithDecimals(raw: bigint, decimals: number): string {
+function _formatWithDecimals(raw: bigint, decimals: number): string {
   if (decimals === 0) return raw.toLocaleString();
   const divisor = 10n ** BigInt(decimals);
   const whole = raw / divisor;

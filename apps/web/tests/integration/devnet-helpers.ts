@@ -152,7 +152,7 @@ export async function fundEphemeralSigner(
   );
 
   const program = makeProgram(connection, creator);
-  await program.provider.sendAndConfirm(tx, []);
+  await program.provider.sendAndConfirm!(tx, []);
 }
 
 export async function createMintFixture(

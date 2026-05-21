@@ -89,31 +89,31 @@ describe("Zod Validators", () => {
     });
 
     it("accepts body without metadata", () => {
-      const { metadata, ...rest } = validBody;
+      const { metadata: _metadata, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
     });
 
     it("accepts body without ipfsCid", () => {
-      const { ipfsCid, ...rest } = validBody;
+      const { ipfsCid: _ipfsCid, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
     });
 
     it("rejects missing treeAddress", () => {
-      const { treeAddress, ...rest } = validBody;
+      const { treeAddress: _treeAddress, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
 
     it("rejects missing creator", () => {
-      const { creator, ...rest } = validBody;
+      const { creator: _creator, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
 
     it("rejects missing mint", () => {
-      const { mint, ...rest } = validBody;
+      const { mint: _mint, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
@@ -216,7 +216,7 @@ describe("Zod Validators", () => {
     });
 
     it("defaults cancellable to false when omitted", () => {
-      const { cancellable, ...rest } = validBody;
+      const { cancellable: _cancellable, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
       if (result.success) {
