@@ -6,7 +6,7 @@ use crate::errors::VestingError;
 use crate::events::StreamCancelled;
 use crate::instructions::withdraw::WithdrawArgs;
 use crate::math::{merkle::leaf_hash, schedule};
-use crate::state::{ClaimRecord, VestingLeaf, VestingTree};
+use crate::state::{milestone_flag_is_set, ClaimRecord, VestingLeaf, VestingTree};
 
 /// Tutorial-style cancel: creator-only, single-recipient stream. Unlocked tokens go to the
 /// beneficiary and the remaining vault balance goes to the creator in one transaction.
@@ -69,6 +69,8 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
     let tree_key = tree.key();
     let cancelled_at = Clock::get()?.unix_timestamp;
 
+    require!(!tree.paused, VestingError::CampaignPaused);
+
     let vault_acc = &ctx.accounts.vault;
     let beneficiary_ata = token_account(&ctx.accounts.beneficiary_ata)?;
     require_keys_eq!(beneficiary_ata.mint, vault_acc.mint, VestingError::MintMismatch);
@@ -118,8 +120,16 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
         cr.bump = ctx.bumps.claim_record;
     }
 
-    let vested_at_cancel = schedule::vested(&leaf, cancelled_at);
-    let to_beneficiary = vested_at_cancel.saturating_sub(cr.claimed_amount);
+    let to_beneficiary = if leaf.release_type == 2 {
+        if milestone_flag_is_set(&tree.milestone_released_flags, leaf.milestone_idx) {
+            leaf.amount.saturating_sub(cr.claimed_amount)
+        } else {
+            0
+        }
+    } else {
+        let vested_at_cancel = schedule::vested(&leaf, cancelled_at);
+        vested_at_cancel.saturating_sub(cr.claimed_amount)
+    };
 
     let vault_before = vault_acc.amount;
     require!(vault_before >= to_beneficiary, VestingError::InsufficientVault);
@@ -137,6 +147,27 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
     ]];
 
     if to_beneficiary > 0 {
+        cr.claimed_amount = cr
+            .claimed_amount
+            .checked_add(to_beneficiary)
+            .ok_or(VestingError::Overflow)?;
+        cr.last_claim_at = cancelled_at;
+
+        tree.total_claimed = tree
+            .total_claimed
+            .checked_add(to_beneficiary)
+            .ok_or(VestingError::Overflow)?;
+        require!(
+            tree.total_claimed <= tree.total_supply,
+            VestingError::OverClaim
+        );
+
+        if leaf.release_type == 2 {
+            let byte_idx = leaf.milestone_idx as usize / 8;
+            let bit_idx = leaf.milestone_idx as usize % 8;
+            cr.milestone_bitmap[byte_idx] |= 1 << bit_idx;
+        }
+
         let cpi_accounts = Transfer {
             from: ctx.accounts.vault.to_account_info(),
             to: ctx.accounts.beneficiary_ata.to_account_info(),
@@ -148,17 +179,6 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
             signer_seeds,
         );
         anchor_spl::token::transfer(cpi_ctx, to_beneficiary)?;
-
-        cr.claimed_amount = cr
-            .claimed_amount
-            .checked_add(to_beneficiary)
-            .ok_or(VestingError::Overflow)?;
-        cr.last_claim_at = cancelled_at;
-
-        tree.total_claimed = tree
-            .total_claimed
-            .checked_add(to_beneficiary)
-            .ok_or(VestingError::Overflow)?;
     }
 
     if to_creator > 0 {

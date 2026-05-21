@@ -78,4 +78,7 @@ pub enum VestingError {
 
     #[msg("Milestone has not been released by the creator")]
     MilestoneNotReleased,
+
+    #[msg("Milestone has already been released")]
+    MilestoneAlreadyReleased,
 }
