@@ -52,6 +52,7 @@ export function useCampaignList(filters?: CampaignListFilters) {
       }
       return res.json();
     },
-    staleTime: 10_000,
+    enabled: filters !== undefined,
+    staleTime: 5_000,
   });
 }

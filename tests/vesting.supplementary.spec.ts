@@ -60,8 +60,8 @@ const ERR = {
   InvalidScheduleType: 6012,
   NothingToClaim: 6015,
   MilestoneAlreadyClaimed: 6014,
-  MilestoneNotReleased: 6032,
-  GracePeriodActive: 6026,
+  MilestoneNotReleased: 6033,
+  GracePeriodActive: 6027,
   SameRoot: 6004,
   Unauthorized: 6005,
   CampaignCancelled: 6023,
@@ -73,17 +73,17 @@ const ERR = {
   AlreadyPaused: 6022,
   NotPaused: 6024,
   CannotClose: 6027,
-  NotSingleStream: 6028,
+  NotSingleStream: 6029,
   MintMismatch: 6007,
   InsufficientVault: 6016,
   OverClaim: 6017,
   WrongVault: 6018,
   NotPausable: 6021,
-  NotCancelled: 6025,
-  ProofTooLong: 6029,
-  FullyVested: 6030,
-  StreamExpired: 6031,
-  MilestoneAlreadyReleased: 6033,
+  NotCancelled: 6026,
+  ProofTooLong: 6030,
+  FullyVested: 6031,
+  StreamExpired: 6032,
+  MilestoneAlreadyReleased: 6034,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -3364,8 +3364,8 @@ describe("vesting supplementary T6-T25", () => {
       const haystack = `${msg}\n${logs}`;
       const isExpired =
         haystack.includes("StreamExpired") ||
-        haystack.includes("6031") ||
-        haystack.includes("0x178f");
+        haystack.includes("6032") ||
+        haystack.includes("0x1790");
       const isNothing =
         haystack.includes("NothingToClaim") ||
         haystack.includes("6015") ||

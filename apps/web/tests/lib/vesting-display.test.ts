@@ -122,6 +122,47 @@ describe("getWithdrawDisabledReason", () => {
     expect(reason).toBe("Cliff not reached yet");
   });
 
+  it("returns milestone not unlocked before milestone cliff", () => {
+    const reason = getWithdrawDisabledReason({
+      ...base,
+      releaseType: 2,
+      nowTs: 500n,
+      cliffTs: 1000n,
+      claimable: 0n,
+    });
+    expect(reason).toBe("Milestone not unlocked yet");
+  });
+
+  it("returns milestone already claimed when bitmap bit is set", () => {
+    const bitmap = new Uint8Array(32);
+    bitmap[0] = 1 << 3;
+
+    const reason = getWithdrawDisabledReason({
+      ...base,
+      releaseType: 2,
+      claimable: 0n,
+      nowTs: 2000n,
+      cliffTs: 1000n,
+      milestoneIdx: 3,
+      milestoneBitmap: bitmap,
+    });
+
+    expect(reason).toBe("Milestone already claimed");
+  });
+
+  it("returns null for claimable milestone stream", () => {
+    const reason = getWithdrawDisabledReason({
+      ...base,
+      releaseType: 2,
+      claimable: 1000n,
+      nowTs: 2000n,
+      cliffTs: 1000n,
+      milestoneIdx: 0,
+      milestoneBitmap: new Uint8Array(32),
+    });
+    expect(reason).toBeNull();
+  });
+
   it("returns generic nothing to claim when claimable is zero", () => {
     expect(getWithdrawDisabledReason({ ...base, claimable: 0n })).toBe("Nothing to claim");
   });

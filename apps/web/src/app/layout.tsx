@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./landing/landing.css";
 import { WalletProvider } from "@/components/providers/WalletProvider";
+import { WalletTokensProvider } from "@/components/providers/WalletTokensProvider";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export default function RootLayout({
     <html lang="en">
       <body suppressHydrationWarning>
         <QueryProvider>
-          <WalletProvider>{children}</WalletProvider>
+          <WalletProvider>
+            <WalletTokensProvider>{children}</WalletTokensProvider>
+          </WalletProvider>
         </QueryProvider>
       </body>
     </html>

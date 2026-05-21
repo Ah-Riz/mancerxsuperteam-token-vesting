@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 interface MyLeaf {
   leafIndex: number;
-  amount: number;
+  amount: number | string;
   releaseType: number;
   startTime: number;
   cliffTime: number;
@@ -17,12 +17,13 @@ interface BeneficiaryCampaign {
   creator: string;
   mint: string;
   campaignId: number;
-  totalSupply: number;
+  totalSupply: number | string;
   leafCount: number;
   paused: boolean;
   cancelledAt: number | null;
   createdAt: number;
   metadata: { name?: string; description?: string; logoUri?: string } | null;
+  myClaimed: number | string;
   myLeaf: MyLeaf;
 }
 
@@ -41,6 +42,6 @@ export function useBeneficiaryCampaigns(address: string | undefined) {
       return res.json();
     },
     enabled: !!address,
-    staleTime: 10_000,
+    staleTime: 5_000,
   });
 }

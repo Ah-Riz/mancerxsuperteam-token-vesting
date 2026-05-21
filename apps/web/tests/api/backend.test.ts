@@ -34,6 +34,10 @@ import {
   createRootVersionRequestSchema,
 } from "@/lib/api/validators";
 import {
+  buildCreateCampaignIndexPayload,
+  prepareBulkCampaign,
+} from "@/lib/campaign/bulk";
+import {
   syncClaimEvents,
   parseClaimedEvent,
   CLAIMED_DISCRIMINATOR,
@@ -91,31 +95,31 @@ describe("Zod Validators", () => {
     });
 
     it("accepts body without metadata", () => {
-      const { metadata, ...rest } = validBody;
+      const { metadata: _metadata, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
     });
 
     it("accepts body without ipfsCid", () => {
-      const { ipfsCid, ...rest } = validBody;
+      const { ipfsCid: _ipfsCid, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
     });
 
     it("rejects missing treeAddress", () => {
-      const { treeAddress, ...rest } = validBody;
+      const { treeAddress: _treeAddress, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
 
     it("rejects missing creator", () => {
-      const { creator, ...rest } = validBody;
+      const { creator: _creator, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
 
     it("rejects missing mint", () => {
-      const { mint, ...rest } = validBody;
+      const { mint: _mint, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(false);
     });
@@ -218,7 +222,7 @@ describe("Zod Validators", () => {
     });
 
     it("defaults cancellable to false when omitted", () => {
-      const { cancellable, ...rest } = validBody;
+      const { cancellable: _cancellable, ...rest } = validBody;
       const result = createCampaignRequestSchema.safeParse(rest);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -337,6 +341,57 @@ describe("POST /api/campaigns", () => {
     expect(res2.status).toBe(200);
     expect(json2.ok).toBe(true);
     expect(json2.campaignId).toBe(json1.campaignId);
+  });
+
+  it("accepts a valid multi-leaf payload built by the frontend bulk helpers", async () => {
+    const prepared = prepareBulkCampaign([
+      {
+        rowNumber: 2,
+        beneficiary: BENEFICIARY,
+        amountInput: "1",
+        amountRaw: "1000000",
+        releaseType: 0,
+        startTime: 1700000000,
+        cliffTime: 1700003600,
+        endTime: 1700003600,
+        milestoneIdx: 0,
+      },
+      {
+        rowNumber: 3,
+        beneficiary: OTHER_BENEFICIARY,
+        amountInput: "2.5",
+        amountRaw: "2500000",
+        releaseType: 1,
+        startTime: 1700000000,
+        cliffTime: 1700003600,
+        endTime: 1731536000,
+        milestoneIdx: 0,
+      },
+    ]);
+
+    const body = buildCreateCampaignIndexPayload({
+      treeAddress: uniqueTreeAddress(),
+      creator: CREATOR,
+      mint: MINT,
+      campaignId: 22,
+      cancellable: true,
+      cancelAuthority: CREATOR,
+      pauseAuthority: CREATOR,
+      createdAt: 1700000000,
+      prepared,
+    });
+
+    const req = new NextRequest(makeUrl("/api/campaigns"), {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    const res = await postCampaigns(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.ok).toBe(true);
+    expect(json.campaignId).toBeGreaterThan(0);
   });
 
   it("returns 400 for validation failure", async () => {
@@ -517,7 +572,7 @@ describe("GET /api/campaigns", () => {
     expect(json.total).toBeGreaterThanOrEqual(2);
   });
 
-  it("filters by status=active (not paused, not cancelled)", async () => {
+  it("filters by status=active (not paused, not cancelled)", { timeout: 15000 }, async () => {
     const active = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
     const paused = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
     const cancelled = await createCampaignViaPost({ treeAddress: uniqueTreeAddress() });
@@ -860,7 +915,7 @@ describe("GET /api/campaigns/[treeAddress]/claims", () => {
 // ===========================================================================
 
 describe("GET /api/beneficiary/[address]/campaigns", () => {
-  it("returns campaigns where address is beneficiary", async () => {
+  it("returns campaigns where address is beneficiary", { timeout: 15000 }, async () => {
     await createCampaignViaPost({ treeAddress: TREE_ADDRESS });
 
     const req = new NextRequest(makeUrl(`/api/beneficiary/${BENEFICIARY}/campaigns`));

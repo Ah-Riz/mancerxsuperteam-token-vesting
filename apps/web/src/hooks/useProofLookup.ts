@@ -20,6 +20,15 @@ interface ProofResponse {
   treeAddress: string;
 }
 
+class ProofLookupError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`Failed to fetch proof: ${status}`);
+    this.status = status;
+  }
+}
+
 export function useProofLookup(
   treeAddress: string | undefined,
   beneficiary: string | undefined,
@@ -32,11 +41,13 @@ export function useProofLookup(
         `/api/campaigns/${treeAddress}/proof?${params}`,
       );
       if (!res.ok) {
-        throw new Error(`Failed to fetch proof: ${res.status}`);
+        throw new ProofLookupError(res.status);
       }
       return res.json();
     },
     enabled: !!treeAddress && !!beneficiary,
     staleTime: 30_000,
+    retry: (_failureCount, error) =>
+      !(error instanceof ProofLookupError && error.status === 404),
   });
 }

@@ -45,14 +45,14 @@ import {
 const ERR = {
   NothingToClaim: 6015,
   MilestoneAlreadyClaimed: 6014,
-  MilestoneNotReleased: 6032,
-  GracePeriodActive: 6026,
+  MilestoneNotReleased: 6033,
+  GracePeriodActive: 6027,
   Unauthorized: 6005,
   CampaignCancelled: 6023,
   CampaignPaused: 6009,
   InvalidProof: 6013,
   UnauthorizedClaimer: 6010,
-  CannotClose: 6027,
+  CannotClose: 6028,
   InsufficientVault: 6016,
 } as const;
 
@@ -140,8 +140,8 @@ describe("security exploit attempts (should all be blocked)", () => {
         haystack.includes("0x177f");
       const isExpired =
         haystack.includes("StreamExpired") ||
-        haystack.includes("6031") ||
-        haystack.includes("0x178f");
+        haystack.includes("6032") ||
+        haystack.includes("0x1790");
       expect(isNothing || isExpired, haystack).to.equal(true);
     }
   });

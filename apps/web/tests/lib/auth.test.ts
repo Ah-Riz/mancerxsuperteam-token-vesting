@@ -64,7 +64,7 @@ describe("auth utilities", () => {
       delete process.env.API_KEY;
       const auth = await import("../../src/lib/auth");
       const result = auth.verifyApiKey({
-        headers: { get: (name: string) => "some-key" },
+        headers: { get: (_name: string) => "some-key" },
       });
       expect(result).not.toBeNull();
       expect(result.status).toBe(401);
@@ -115,7 +115,7 @@ describe("auth utilities", () => {
       delete process.env.ADMIN_API_KEY;
       const auth = await import("../../src/lib/auth");
       const result = auth.verifyAdminKey({
-        headers: { get: (name: string) => "some-key" },
+        headers: { get: (_name: string) => "some-key" },
       });
       expect(result).not.toBeNull();
       expect(result.status).toBe(401);

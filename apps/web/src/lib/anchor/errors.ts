@@ -29,14 +29,16 @@ export const VESTING_ERROR_CODES = {
   AlreadyPaused: 6022,
   CampaignCancelled: 6023,
   NotPaused: 6024,
-  NotCancelled: 6025,
-  GracePeriodActive: 6026,
-  CannotClose: 6027,
-  NotSingleStream: 6028,
-  ProofTooLong: 6029,
-  FullyVested: 6030,
-  StreamExpired: 6031,
-  MilestoneNotReleased: 6032,
+  CampaignCompleted: 6025,
+  NotCancelled: 6026,
+  GracePeriodActive: 6027,
+  CannotClose: 6028,
+  NotSingleStream: 6029,
+  ProofTooLong: 6030,
+  FullyVested: 6031,
+  StreamExpired: 6032,
+  MilestoneNotReleased: 6033,
+  MilestoneAlreadyReleased: 6034,
 } as const;
 
 type ErrorKey = keyof typeof VESTING_ERROR_CODES;
@@ -68,6 +70,7 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
   AlreadyPaused: "Stream is already paused.",
   CampaignCancelled: "Stream is cancelled; this action is blocked.",
   NotPaused: "Stream is not paused.",
+  CampaignCompleted: "Stream is already fully claimed; this action is blocked.",
   NotCancelled: "Stream must be cancelled first.",
   GracePeriodActive: "Grace period is still active; unvested sweep not allowed yet.",
   CannotClose: "Claim record cannot be closed yet.",
@@ -77,6 +80,8 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
   StreamExpired: "This stream has ended; there is nothing left to claim.",
   MilestoneNotReleased:
     "This milestone has not been released yet. The creator must release it before you can claim.",
+  MilestoneAlreadyReleased:
+    "This milestone has already been released by the creator.",
 };
 
 function codeToHex(code: number): string {

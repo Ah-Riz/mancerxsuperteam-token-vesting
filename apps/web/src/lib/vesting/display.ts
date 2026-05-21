@@ -44,7 +44,30 @@ export type WithdrawDisabledParams = {
   releaseType: number;
   nowTs: bigint;
   cliffTs: bigint;
+  milestoneIdx?: number;
+  milestoneBitmap?: Uint8Array;
 };
+
+export type GracePeriodState =
+  | { status: "not_cancelled" }
+  | { status: "grace_active"; remaining: bigint; countdown: string }
+  | { status: "grace_expired" };
+
+export function getGracePeriodState(
+  cancelledAt: bigint | null,
+  nowTs: bigint,
+): GracePeriodState {
+  if (cancelledAt === null) return { status: "not_cancelled" };
+  const graceEnd = cancelledAt + GRACE_PERIOD_SECS;
+  if (nowTs < graceEnd) {
+    return {
+      status: "grace_active",
+      remaining: graceEnd - nowTs,
+      countdown: formatCountdown(graceEnd, nowTs),
+    };
+  }
+  return { status: "grace_expired" };
+}
 
 export function getWithdrawDisabledReason(params: WithdrawDisabledParams): string | null {
   if (params.loading) return "Claiming...";
@@ -53,6 +76,14 @@ export function getWithdrawDisabledReason(params: WithdrawDisabledParams): strin
     return "Stream cancelled — nothing to claim";
   if (params.releaseType === 0 && params.nowTs < params.cliffTs && params.claimable === 0n)
     return "Cliff not reached yet";
+  if (params.releaseType === 2 && params.nowTs < params.cliffTs && params.claimable === 0n)
+    return "Milestone not unlocked yet";
+  if (params.releaseType === 2 && params.claimable === 0n && params.milestoneIdx !== undefined && params.milestoneBitmap) {
+    const byteIdx = Math.floor(params.milestoneIdx / 8);
+    const bitIdx = params.milestoneIdx % 8;
+    if (byteIdx < params.milestoneBitmap.length && (params.milestoneBitmap[byteIdx] & (1 << bitIdx)) !== 0)
+      return "Milestone already claimed";
+  }
   if (params.claimable === 0n) return "Nothing to claim";
   return null;
 }

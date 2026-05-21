@@ -6,7 +6,7 @@ import { campaigns, claimEvents } from "@/lib/db/schema";
 import { PROGRAM_ID } from "@/lib/anchor/client";
 
 export const CLAIMED_DISCRIMINATOR = Buffer.from(
-  crypto.createHash("sha256").update("global:claimed").digest().subarray(0, 8),
+  crypto.createHash("sha256").update("event:Claimed").digest().subarray(0, 8),
 );
 
 interface ParsedClaimedEvent {
@@ -74,10 +74,78 @@ export async function syncClaimEvents(
   if (!rpcUrl) throw new Error("NEXT_PUBLIC_RPC_ENDPOINT is not set");
 
   const connection = new Connection(rpcUrl, "confirmed");
+  return syncClaimEventsWithConnection(connection, fromSlot);
+}
+
+async function processTransactions(params: {
+  connection: Connection;
+  signatures: Array<{ signature: string; slot: number }>;
+}): Promise<{ processed: number; lastSlot: number }> {
+  const { connection, signatures } = params;
+  let processed = 0;
+  let lastSlot = 0;
+  const campaignCache = new Map<string, number>();
+
+  for (const { signature, slot } of signatures) {
+    const tx = await connection.getTransaction(signature, {
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!tx?.meta?.logMessages) continue;
+
+    const eventBuffers = extractAnchorEventData(tx.meta.logMessages);
+    const claimedEvents = eventBuffers
+      .map((buf) => parseClaimedEvent(buf))
+      .filter((e): e is ParsedClaimedEvent => e !== null);
+
+    for (const event of claimedEvents) {
+      let campaignId = campaignCache.get(event.tree);
+      if (campaignId === undefined) {
+        const [campaign] = await db
+          .select({ id: campaigns.id })
+          .from(campaigns)
+          .where(eq(campaigns.treeAddress, event.tree))
+          .limit(1);
+        if (!campaign) continue;
+        campaignCache.set(event.tree, campaign.id);
+        campaignId = campaign.id;
+      }
+
+      await db.insert(claimEvents).values({
+        campaignId,
+        beneficiary: event.beneficiary,
+        leafIndex: event.leafIndex,
+        amount: BigInt(event.amount),
+        totalClaimedByUser: BigInt(event.totalClaimedByUser),
+        totalClaimedOverall: BigInt(event.totalClaimedOverall),
+        milestoneIdx: event.milestoneIdx,
+        signature,
+        slot: BigInt(slot),
+        blockTime: BigInt(tx.blockTime ?? Math.floor(Date.now() / 1000)),
+      }).onConflictDoNothing();
+
+      await db
+        .update(campaigns)
+        .set({
+          totalClaimed: sql`GREATEST(${campaigns.totalClaimed}, ${event.totalClaimedOverall})`,
+        })
+        .where(eq(campaigns.id, campaignId));
+
+      processed++;
+    }
+
+    if (slot > lastSlot) lastSlot = slot;
+  }
+
+  return { processed, lastSlot };
+}
+
+async function syncClaimEventsWithConnection(
+  connection: Connection,
+  fromSlot?: number,
+): Promise<{ processed: number; lastSlot: number }> {
   let processed = 0;
   let lastSlot = fromSlot ?? 0;
   let before: string | undefined = undefined;
-  const campaignCache = new Map<string, number>();
 
   let pageSignatures: Awaited<ReturnType<typeof connection.getSignaturesForAddress>>;
 
@@ -93,62 +161,18 @@ export async function syncClaimEvents(
     const validSigs = pageSignatures.filter((s) => !(fromSlot && s.slot <= fromSlot));
     if (validSigs.length === 0) break;
 
-    // Batch-fetch transactions in chunks of 100
-    for (let i = 0; i < validSigs.length; i += 100) {
-      const batch = validSigs.slice(i, i + 100);
-      const txs = await connection.getTransactions(
-        batch.map((s) => s.signature),
-        { maxSupportedTransactionVersion: 0 },
-      );
-
-      for (let j = 0; j < txs.length; j++) {
-        const tx = txs[j];
-        const { signature, slot } = batch[j];
-        if (!tx?.meta?.logMessages) continue;
-
-        const eventBuffers = extractAnchorEventData(tx.meta.logMessages);
-        const claimedEvents = eventBuffers
-          .map((buf) => parseClaimedEvent(buf))
-          .filter((e): e is ParsedClaimedEvent => e !== null);
-
-        for (const event of claimedEvents) {
-          let campaignId = campaignCache.get(event.tree);
-          if (campaignId === undefined) {
-            const [campaign] = await db
-              .select({ id: campaigns.id })
-              .from(campaigns)
-              .where(eq(campaigns.treeAddress, event.tree))
-              .limit(1);
-            if (!campaign) continue;
-            campaignCache.set(event.tree, campaign.id);
-            campaignId = campaign.id;
-          }
-
-          await db.insert(claimEvents).values({
-            campaignId,
-            beneficiary: event.beneficiary,
-            leafIndex: event.leafIndex,
-            amount: BigInt(event.amount),
-            totalClaimedByUser: BigInt(event.totalClaimedByUser),
-            totalClaimedOverall: BigInt(event.totalClaimedOverall),
-            milestoneIdx: event.milestoneIdx,
-            signature,
-            slot: BigInt(slot),
-            blockTime: BigInt(tx.blockTime ?? Math.floor(Date.now() / 1000)),
-          }).onConflictDoNothing();
-
-          await db
-            .update(campaigns)
-            .set({
-              totalClaimed: sql`GREATEST(${campaigns.totalClaimed}, ${event.totalClaimedOverall})`,
-            })
-            .where(eq(campaigns.id, campaignId));
-
-          processed++;
-        }
-
-        if (slot > lastSlot) lastSlot = slot;
-      }
+    const pageResult = await processTransactions({
+      connection,
+      signatures: validSigs.map((sig) => ({
+        signature: sig.signature,
+        slot: sig.slot,
+      })),
+    });
+    processed += pageResult.processed;
+    if (pageResult.lastSlot > lastSlot) lastSlot = pageResult.lastSlot;
+    if (validSigs[0]?.slot > lastSlot) lastSlot = validSigs[0].slot;
+    if (validSigs[validSigs.length - 1]?.slot > lastSlot) {
+      lastSlot = validSigs[validSigs.length - 1].slot;
     }
 
     // Set before to oldest signature for next page
@@ -156,4 +180,32 @@ export async function syncClaimEvents(
   } while (pageSignatures.length === 1000);
 
   return { processed, lastSlot };
+}
+
+export async function syncClaimEventsForSignatures(
+  signatures: string[],
+): Promise<{ processed: number; lastSlot: number }> {
+  const rpcUrl = process.env.NEXT_PUBLIC_RPC_ENDPOINT;
+  if (!rpcUrl) throw new Error("NEXT_PUBLIC_RPC_ENDPOINT is not set");
+
+  const uniqueSignatures = [...new Set(signatures.filter(Boolean))];
+  if (uniqueSignatures.length === 0) {
+    return { processed: 0, lastSlot: 0 };
+  }
+
+  const connection = new Connection(rpcUrl, "confirmed");
+  const statuses = await connection.getSignatureStatuses(uniqueSignatures);
+
+  const batch = uniqueSignatures
+    .map((signature, index) => ({
+      signature,
+      slot: statuses.value[index]?.slot ?? 0,
+    }))
+    .filter((entry) => entry.slot > 0);
+
+  if (batch.length === 0) {
+    return { processed: 0, lastSlot: 0 };
+  }
+
+  return processTransactions({ connection, signatures: batch });
 }
