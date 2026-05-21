@@ -34,9 +34,9 @@ velthoryn/
 
 **Fully implemented and deployed to devnet.** All **14** instruction handlers (including `create_stream`, `withdraw`, `set_milestone_released`, and `cancel_stream`), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (33 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
-**Test results: 79/79 SC tests PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
+**Test results: 86/86 SC tests PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
 **BE–SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) through prepare → POST (all leaves verified) → GET proof → verify. RLS on all Supabase tables. **Bootcamp acceptance: 8/8** — see [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md).
-- Devnet (`pnpm test:devnet`): **79 passing, 1 pending** (T64 `cancel_stream` flaky on public RPC; covered in bankrun)
+- Devnet (`pnpm test:devnet`): **86 passing, 1 pending** (T68 clock warp; cancel logic covered by T64b–T64d)
 - Clock-dependent cases: `tests/vesting.clock.spec.ts` via **solana-bankrun** (T17–T20, T25, T47, T55–T64, EXPLOIT 4)
 
 See [`docs/STREAM_MODEL.md`](docs/STREAM_MODEL.md) (tutorial `Stream` PDA vs campaign model) and [`docs/ERROR_MAP.md`](docs/ERROR_MAP.md).
@@ -56,7 +56,7 @@ See [`docs/STREAM_MODEL.md`](docs/STREAM_MODEL.md) (tutorial `Stream` PDA vs cam
 | `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
 | `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
 | `set_milestone_released` | Creator sets a milestone flag before milestone unlock.        |
-| `cancel_stream`      | Creator-only single-leaf cancel: vested → beneficiary, rest → creator. |
+| `cancel_stream`      | Creator-only single-leaf cancel: vested → beneficiary, rest → creator. Milestone-aware: released → full amount, unreleased → 0. |
 
 For deeper reads:
 - [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts.
@@ -93,7 +93,7 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-pnpm test:localnet     # persistent validator — 79/79 passing (~3m)
+pnpm test:localnet     # persistent validator — 86/86 passing (~3m)
 pnpm test:devnet       # against devnet RPC (deployed program + funded wallet)
 ```
 

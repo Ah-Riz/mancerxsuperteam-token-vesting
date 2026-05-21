@@ -11,7 +11,7 @@ Deployed: devnet (latest upgrade at slot **463223253**, ~447KB allocation). Loca
 programs/vesting/src/
 ├── lib.rs                  # #[program] dispatcher — wires the 14 entry points
 ├── constants.rs            # GRACE_PERIOD_SECS, MAX_MERKLE_PROOF_LEN
-├── errors.rs               # VestingError enum (31 variants including ProofTooLong)
+├── errors.rs               # VestingError enum (34 variants including ProofTooLong, MilestoneAlreadyReleased)
 ├── events.rs               # 9 event types (CampaignCreated, Claimed, RootUpdated, …)
 ├── state/
 │   ├── mod.rs              # re-exports
@@ -49,14 +49,14 @@ programs/vesting/src/
 | `claim`              | `leaf: VestingLeaf, proof: Vec<[u8; 32]>`                | Verify proof against current root, run schedule math, transfer vested delta to beneficiary, update `ClaimRecord`. |
 | `withdraw`           | `WithdrawArgs`                                           | Simplified claim for single-recipient streams (leaf_count == 1). Reconstructs the leaf on-chain and verifies `leaf_hash == merkle_root` — no Merkle proof needed. |
 | `cancel_campaign`    | —                                                        | Cancel-authority sets `cancelled_at = now`. Starts the 7-day grace clock. |
-| `cancel_stream`      | `WithdrawArgs`                                           | Creator-only for `leaf_count == 1`: vested → beneficiary, vault remainder → creator (T64). |
-| `set_milestone_released` | `milestone_idx: u8`                                | Creator sets bit in `milestone_released_flags` (required before milestone claim/withdraw). |
+| `cancel_stream`      | `WithdrawArgs`                                           | Creator-only for `leaf_count == 1`: vested → beneficiary, vault remainder → creator. Milestone-aware: released milestone → beneficiary gets full amount; unreleased → 0. OverClaim guard on `total_claimed`. |
+| `set_milestone_released` | `milestone_idx: u8`                                | Creator sets bit in `milestone_released_flags`. Idempotency guard: second call rejects with `MilestoneAlreadyReleased`. |
 | `update_root`        | `new_root: [u8; 32], new_leaf_count: u32`                | Cancel-authority rotates the Merkle root (per-recipient clawback). |
 | `withdraw_unvested`  | —                                                        | After grace, creator sweeps `vault_balance − vested_total_at_cancel`. |
 | `pause_campaign`     | —                                                        | Pause-authority blocks claims. |
 | `unpause_campaign`   | — (shares Accounts with pause_campaign)                  | Resume a paused campaign. |
 | `close_claim_record` | —                                                        | Reclaim rent on a finished `ClaimRecord`. Checks `total_entitled > 0 && claimed_amount >= total_entitled` or post-grace. |
-| `get_vested_amount`  | `leaf: VestingLeaf, cancelled_at: Option<i64>, now: i64` | Read-only helper that runs schedule math (returns u64). |
+| `get_vested_amount`  | `leaf: VestingLeaf, cancelled_at: Option<i64>, now: i64, milestone_released_flags: Option<[u8; 32]>` | Read-only helper. For milestone type: returns 0 if flag not set, full amount if released. |
 
 Args are defined alongside their instruction (`CreateCampaignArgs` lives in `instructions/create_campaign.rs`).
 
@@ -131,7 +131,7 @@ Total: **70 bytes** Borsh LE. **Field order is the wire order** — the TS encod
 
 ## Errors
 
-`VestingError` (31 variants) covers every checked condition. Read `programs/vesting/src/errors.rs` for the full list.
+`VestingError` (34 variants) covers every checked condition. Read `programs/vesting/src/errors.rs` for the full list.
 
 **Tutorial / checklist mapping:** see [`docs/ERROR_MAP.md`](ERROR_MAP.md) (e.g. `InsufficientBalance` → `InsufficientVault`, `UnauthorizedWithdraw` → `UnauthorizedClaimer`).
 
@@ -142,6 +142,7 @@ Notable variants:
 - `EmptyRoot`, `EmptyCampaign`, `ZeroAmount` — guard `create_campaign` args.
 - `InvalidProof`, `NothingToClaim`, `MilestoneAlreadyClaimed` — claim-path failures.
 - `ProofTooLong` (6029) — Merkle proof exceeds `MAX_MERKLE_PROOF_LEN` or `max_proof_len_for_leaf_count` (VEL-009).
+- `MilestoneAlreadyReleased` (6033) — `set_milestone_released` called twice for same index.
 - `CampaignPaused`, `CampaignCancelled`, `AlreadyCancelled` — state-toggle guards.
 - `GracePeriodActive`, `NotCancelled` — gate `withdraw_unvested`.
 - `NotSingleStream` — gates `withdraw` to single-recipient streams only.
@@ -179,9 +180,9 @@ The TS client library (`clients/ts/`) provides leaf encoding and Merkle tree con
 - `CampaignRecipient`, `PreparedCampaign` — types for campaign preparation
 - Golden vector gate verifies cross-language hash match
 
-Integration tests in `tests/` cover T6-T55 (supplementary/error paths), golden vector gate, and 11 security exploit tests (EXPLOIT 1–11) — 70 tests total.
+Integration tests in `tests/` cover T6-T68 (supplementary/error paths), golden vector gate, and 11 security exploit tests (EXPLOIT 1–11) — 86 tests total.
 
-**Test results (local validator):** All passing. Clock-dependent tests use `solana-bankrun` for deterministic time control.
+**Test results (local validator):** 86/86 passing, 1 pending (T68 — clock warp). Clock-dependent tests use `solana-bankrun` for deterministic time control.
 - Trident fuzz smoke: `trident-tests/fuzz_vesting` runs in CI after `anchor test`
 
 Run with `pnpm test:localnet` (recommended) or start a persistent validator manually:

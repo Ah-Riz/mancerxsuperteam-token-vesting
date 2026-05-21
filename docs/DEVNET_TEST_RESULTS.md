@@ -1,14 +1,14 @@
 # Devnet Test Results — Velthoryn
 
-**Date:** 2026-05-18
+**Date:** 2026-05-21
 **Network:** devnet (https://api.devnet.solana.com)
 **Program:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (upgraded slot **463223253**)
 **Wallet:** `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6` (program upgrade authority)
 **Method:** `pnpm test:devnet` (`scripts/test-devnet.sh` → `ts-mocha` on devnet RPC)
 
-**Summary: 79 passing, 0 failing, 1 pending (~4m)**
+**Summary: 86 passing, 0 failing, 1 pending (~3m)**
 
-Pending: supplementary **T64** (`cancel_stream` on public devnet RPC — timing/RPC flakiness); **T64** is covered in **bankrun** (see clock suite).
+Pending: supplementary **T68** (`cancel_stream` unreleased milestone then `withdraw_unvested` — requires `setClock` RPC). Covered by T64b/T64c/T64d for the milestone cancel logic.
 
 Integration tests that create on-chain state run against devnet RPC. Clock-dependent cases in `tests/vesting.clock.spec.ts` always run via **solana-bankrun** (embedded, not public RPC `setClock`).
 
@@ -32,9 +32,9 @@ pnpm test:localnet
 | Golden Vector (5) | 5 PASS | — | **5/5** |
 | Security Exploit (10) | 9 PASS | 1 PASS (EXPLOIT 4) | **10/10** |
 | Smoke / Scaffold (2) | 2 PASS | — | **2/2** |
-| Supplementary (52) | 51 PASS, 1 pending (T64) | — | **52/52** |
+| Supplementary (62) | 61 PASS, 1 pending (T68) | — | **62/62** |
 | Clock-dependent (12) | — | 12 PASS (incl. T64 `cancel_stream`) | **12/12** |
-| **Total** | **68 on devnet RPC** | **12 bankrun** | **79 passing, 1 pending** |
+| **Total** | **75 on devnet RPC** | **12 bankrun** | **86 passing, 1 pending** |
 
 > **2026-05-18 (upgrade):** Deployed bytecode with `set_milestone_released`, `cancel_stream`, `milestone_released_flags` (T63–T64). Upgrade via `solana program deploy` using wallet `GPfHeZ…` as authority. `test-devnet.sh` no longer uses `anchor test` (which redeployed to localnet with a mismatched keypair).
 >
@@ -136,6 +136,15 @@ pnpm test:localnet
 | T57 | withdraw at 100% vested claims full stream amount | PASS | |
 | T58 | withdraw at 50% vested unlocks 50% of stream amount | PASS | Symmetric cliff/end window (~50% at validator now) |
 | T59 | immediate second withdraw rejects with NothingToClaim | PASS (bankrun) | Bankrun — after 25% claim |
+| T63 | milestone claim before set_milestone_released rejects | PASS | |
+| T64 | cancel_stream splits unlocked to beneficiary and locked to creator | PASS | |
+| T64b | cancel_stream on unreleased milestone gives beneficiary 0 | PASS | Creator gets all |
+| T64c | cancel_stream on released milestone gives beneficiary full amount | PASS | |
+| T64d | cancel_stream after beneficiary claimed milestone rejects with FullyVested | PASS | |
+| T65 | set_milestone_released twice rejects with MilestoneAlreadyReleased | PASS | |
+| T66 | milestone_idx 255 boundary — release and claim succeed | PASS | |
+| T67 | claim released milestone on cancelled campaign succeeds | PASS | |
+| T68 | cancel_stream unreleased milestone then withdraw_unvested gets 0 | PENDING | Requires setClock RPC |
 
 ---
 
