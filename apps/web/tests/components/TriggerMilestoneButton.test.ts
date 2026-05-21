@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { createElement } from "react";
-import { MilestoneStatusBadge } from "@/components/campaign/TriggerMilestoneButton";
+import { MilestoneStatusBadge } from "@/components/campaign/detail/MilestoneStatusBadge";
 
 function renderBadge(overrides = {}) {
   const props = {

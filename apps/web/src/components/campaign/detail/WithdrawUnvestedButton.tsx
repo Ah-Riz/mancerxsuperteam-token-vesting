@@ -64,8 +64,9 @@ export function WithdrawUnvestedButton({
       if (
         err instanceof Error &&
         /User rejected|Connection rejected/i.test(err.message)
-      )
+      ) {
         return;
+      }
       toast(
         err instanceof Error ? err.message : "Failed to withdraw unvested",
         "error",
@@ -79,7 +80,7 @@ export function WithdrawUnvestedButton({
     return (
       <button
         disabled
-        className="w-full rounded-xl border border-white/[0.06] py-2.5 text-[13px] font-medium text-[#555d73] cursor-not-allowed"
+        className="cursor-not-allowed w-full rounded-xl border border-white/[0.06] py-2.5 text-[13px] font-medium text-[#555d73]"
       >
         Withdraw Unvested — available in {grace.countdown}
       </button>
@@ -97,7 +98,7 @@ export function WithdrawUnvestedButton({
 
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="rounded-2xl border border-white/[0.08] bg-[#0d1017] p-6 max-w-md w-full mx-4 space-y-4">
+          <div className="mx-4 w-full max-w-md space-y-4 rounded-2xl border border-white/[0.08] bg-[#0d1017] p-6">
             <h3 className="text-[15px] font-medium text-amber-400">
               Withdraw Unvested Tokens?
             </h3>

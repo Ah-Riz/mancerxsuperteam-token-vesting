@@ -26,7 +26,7 @@ export function CancelConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="rounded-2xl border border-white/[0.08] bg-[#0d1017] p-6 max-w-md w-full mx-4 space-y-5">
+      <div className="mx-4 w-full max-w-md space-y-5 rounded-2xl border border-white/[0.08] bg-[#0d1017] p-6">
         <h3 className="text-[15px] font-semibold text-red-400">
           Cancel this vesting stream?
         </h3>

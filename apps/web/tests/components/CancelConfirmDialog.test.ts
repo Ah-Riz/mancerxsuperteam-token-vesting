@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { createElement } from "react";
-import { CancelConfirmDialog } from "@/components/campaign/CancelConfirmDialog";
+import { CancelConfirmDialog } from "@/components/campaign/detail/CancelConfirmDialog";
 
 function renderDialog(overrides = {}) {
   const props = {

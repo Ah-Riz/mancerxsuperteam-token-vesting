@@ -6,9 +6,19 @@ export interface StreamSchedule {
   cliffTime: number;
   endTime: number;
   milestoneIdx: number;
+  beneficiary?: string;
+  milestoneName?: string;
+  milestoneOwner?: string;
+  milestoneMode?: string;
+  milestoneEvidence?: string;
 }
 
 const LOCAL_PREFIX = "velthoryn:stream:";
+
+export interface StoredLocalStreamSchedule {
+  treeAddress: string;
+  schedule: StreamSchedule;
+}
 
 export function streamScheduleKey(treeAddress: string): string {
   return `${LOCAL_PREFIX}${treeAddress}`;
@@ -39,7 +49,30 @@ export function loadStreamScheduleLocal(
   }
 }
 
-export interface CreateStreamIndexPayload {
+export function listLocalStreamSchedules(): StoredLocalStreamSchedule[] {
+  if (typeof window === "undefined") return [];
+
+  const streams: StoredLocalStreamSchedule[] = [];
+
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(LOCAL_PREFIX)) continue;
+
+      const treeAddress = key.slice(LOCAL_PREFIX.length);
+      const schedule = loadStreamScheduleLocal(treeAddress);
+      if (!schedule) continue;
+
+      streams.push({ treeAddress, schedule });
+    }
+  } catch {
+    return [];
+  }
+
+  return streams;
+}
+
+export interface CampaignIndexPayload {
   treeAddress: string;
   creator: string;
   mint: string;
@@ -64,6 +97,8 @@ export interface CreateStreamIndexPayload {
   }>;
 }
 
+export type CreateStreamIndexPayload = CampaignIndexPayload;
+
 export function buildCreateStreamIndexPayload(params: {
   treeAddress: string;
   creator: string;
@@ -78,6 +113,7 @@ export function buildCreateStreamIndexPayload(params: {
   milestoneIdx: number;
   cancellable: boolean;
   cancelAuthority: string | null;
+  pauseAuthority?: string | null;
   createdAt?: number;
 }): CreateStreamIndexPayload {
   const leafForHash: VestingLeaf = {
@@ -103,7 +139,7 @@ export function buildCreateStreamIndexPayload(params: {
     totalSupply: params.amount,
     cancellable: params.cancellable,
     cancelAuthority: params.cancelAuthority,
-    pauseAuthority: null,
+    pauseAuthority: params.pauseAuthority ?? null,
     createdAt: params.createdAt ?? Math.floor(Date.now() / 1000),
     leaves: [
       {
@@ -121,8 +157,8 @@ export function buildCreateStreamIndexPayload(params: {
   };
 }
 
-export async function indexStreamCampaign(
-  payload: CreateStreamIndexPayload,
+export async function indexCampaign(
+  payload: CampaignIndexPayload,
 ): Promise<void> {
   const res = await fetch("/api/campaigns", {
     method: "POST",
@@ -133,4 +169,10 @@ export async function indexStreamCampaign(
     const body = await res.text();
     throw new Error(`Index failed (${res.status}): ${body}`);
   }
+}
+
+export async function indexStreamCampaign(
+  payload: CreateStreamIndexPayload,
+): Promise<void> {
+  await indexCampaign(payload);
 }

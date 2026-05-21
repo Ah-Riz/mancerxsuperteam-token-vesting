@@ -45,6 +45,7 @@ export async function GET(
       cliff_time: number;
       end_time: number;
       milestone_idx: number;
+      my_claimed: number;
     }>(sql`
       WITH latest_rv AS (
         SELECT id, campaign_id, version
@@ -54,16 +55,27 @@ export async function GET(
           FROM root_versions
           GROUP BY campaign_id
         )
+      ),
+      my_claims AS (
+        SELECT
+          campaign_id,
+          beneficiary,
+          max(total_claimed_by_user) AS claimed_amount
+        FROM claim_events
+        WHERE beneficiary = ${address}
+        GROUP BY campaign_id, beneficiary
       )
       SELECT
         c.id, c.tree_address, c.creator, c.mint, c.campaign_id,
         c.total_supply, c.leaf_count, c.paused, c.cancelled_at,
         c.created_at, c.metadata,
         l.leaf_index, l.amount, l.release_type,
-        l.start_time, l.cliff_time, l.end_time, l.milestone_idx
+        l.start_time, l.cliff_time, l.end_time, l.milestone_idx,
+        coalesce(mc.claimed_amount, 0)::bigint AS my_claimed
       FROM campaigns c
       INNER JOIN latest_rv rv ON rv.campaign_id = c.id
       INNER JOIN leaves l ON l.root_version_id = rv.id AND l.beneficiary = ${address}
+      LEFT JOIN my_claims mc ON mc.campaign_id = c.id AND mc.beneficiary = ${address}
       ORDER BY c.created_at DESC
     `);
 
@@ -82,6 +94,7 @@ export async function GET(
       cancelledAt: row.cancelled_at,
       createdAt: row.created_at,
       metadata: row.metadata,
+      myClaimed: row.my_claimed,
       myLeaf: {
         leafIndex: row.leaf_index,
         amount: row.amount,

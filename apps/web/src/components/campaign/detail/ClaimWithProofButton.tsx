@@ -41,7 +41,7 @@ export function ClaimWithProofButton({
 
   if (proofQuery.isLoading) {
     return (
-      <button disabled className="w-full rounded-xl bg-violet-600/50 py-3.5 text-[15px] font-semibold text-white/60 cursor-not-allowed">
+      <button disabled className="cursor-not-allowed w-full rounded-xl bg-violet-600/50 py-3.5 text-[15px] font-semibold text-white/60">
         Loading proof...
       </button>
     );
@@ -99,8 +99,9 @@ export function ClaimWithProofButton({
       if (
         err instanceof Error &&
         /User rejected|Connection rejected/i.test(err.message)
-      )
+      ) {
         return;
+      }
       const msg = formatVestingError(err);
       toast(msg, "error");
     } finally {
@@ -112,7 +113,7 @@ export function ClaimWithProofButton({
     <button
       onClick={handleClaim}
       disabled={loading}
-      className="w-full rounded-xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white transition hover:bg-violet-500 active:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
+      className="w-full rounded-xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white transition hover:bg-violet-500 active:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {loading ? "Claiming..." : "Claim Tokens (Merkle)"}
     </button>

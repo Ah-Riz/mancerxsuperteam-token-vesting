@@ -2,51 +2,86 @@
 
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { useEffect, useState, useCallback } from "react";
-import { useVestingProgram } from "@/hooks/useVestingProgram";
-import { BN } from "@coral-xyz/anchor";
+import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
+import { useCampaignList } from "@/hooks/useCampaignList";
+import { useBeneficiaryCampaigns } from "@/hooks/useBeneficiaryCampaigns";
+import { useLocalCampaigns } from "@/hooks/useLocalCampaigns";
+import { CampaignRow } from "@/components/campaign/list/CampaignRow";
+import { EmptyState } from "@/components/campaign/list/EmptyState";
+import {
+  getRecipientClaimableAmount,
+  getRecipientStreamStatus,
+  getSenderStreamStatus,
+  type StreamStatus,
+} from "@/lib/vesting/list";
 
-type Campaign = {
+type TabKey = "all" | "recipient" | "sender";
+
+type SenderCampaign = {
   treeAddress: string;
   creator: string;
   mint: string;
-  totalSupply: bigint;
-  totalClaimed: bigint;
+  campaignId: number;
+  leafCount: number;
+  totalSupply: number | string;
+  totalClaimed: number | string;
+  cancellable: boolean;
   paused: boolean;
-  cancelledAt: bigint | null;
+  cancelledAt: number | null;
   createdAt: number;
-  campaignId: string;
+  metadata: { name?: string; description?: string; logoUri?: string } | null;
 };
 
-function StatusBadge({ paused, cancelledAt }: { paused: boolean; cancelledAt: bigint | null }) {
-  if (cancelledAt) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-medium text-red-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-        Cancelled
-      </span>
-    );
-  }
-  if (paused) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-        Paused
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      Active
-    </span>
-  );
-}
+type RecipientCampaign = {
+  treeAddress: string;
+  creator: string;
+  mint: string;
+  campaignId: number;
+  totalSupply: number | string;
+  leafCount: number;
+  paused: boolean;
+  cancelledAt: number | null;
+  createdAt: number;
+  metadata: { name?: string; description?: string; logoUri?: string } | null;
+  myClaimed: number | string;
+  myLeaf: {
+    leafIndex: number;
+    amount: number | string;
+    releaseType: number;
+    startTime: number;
+    cliffTime: number;
+    endTime: number;
+    milestoneIdx: number;
+  };
+};
 
-function truncAddr(addr: string) {
-  return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
-}
+type StreamRow = {
+  treeAddress: string;
+  role: "sender" | "recipient" | "both";
+  primaryRole: "sender" | "recipient";
+  creator: string;
+  mint: string;
+  campaignId: number;
+  createdAt: number;
+  status: StreamStatus;
+  roleLabel: string;
+  amountLabel: "Allocated" | "Total Supply";
+  amountRaw: bigint;
+  nextLabel: string;
+  nextValue: string;
+  typeLabel: string;
+  counterpartyLabel: string;
+  counterpartyValue: string;
+  claimableRaw?: bigint;
+  metadata: { name?: string; description?: string; logoUri?: string } | null;
+};
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "recipient", label: "As Recipient" },
+  { key: "sender", label: "As Sender" },
+];
 
 function formatDate(ts: number) {
   return new Date(ts * 1000).toLocaleDateString("en-GB", {
@@ -56,9 +91,13 @@ function formatDate(ts: number) {
   });
 }
 
-function progressPercent(claimed: bigint, supply: bigint): number {
-  if (supply === 0n) return 0;
-  return Number((claimed * 100n) / supply);
+function truncateAddress(addr: string) {
+  if (addr.length <= 12) return addr;
+  return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+}
+
+function toBigInt(value: number | string): bigint {
+  return BigInt(String(value));
 }
 
 function formatWithDecimals(raw: bigint, decimals: number): string {
@@ -70,227 +109,350 @@ function formatWithDecimals(raw: bigint, decimals: number): string {
   return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
+function getReleaseTypeLabel(releaseType: number): string {
+  if (releaseType === 0) return "Cliff";
+  if (releaseType === 1) return "Linear";
+  if (releaseType === 2) return "Milestone";
+  return "Unknown";
+}
+
+function getReleaseStateText(campaign: RecipientCampaign, nowTs: bigint): string {
+  const status = getRecipientStreamStatus(campaign, nowTs);
+  if (status === "Claimed") return "Fully claimed";
+  if (status === "Claimable") return "Claim available";
+  if (status === "Paused") return "Paused";
+  if (status === "Cancelled") return "Cancelled";
+
+  if (campaign.myLeaf.releaseType === 1) {
+    const startTs = BigInt(campaign.myLeaf.cliffTime);
+    const endTs = BigInt(campaign.myLeaf.endTime);
+    if (nowTs < startTs) return `Starts ${formatDate(Number(startTs))}`;
+    return `Ends ${formatDate(Number(endTs))}`;
+  }
+
+  const unlockTs = BigInt(campaign.myLeaf.cliffTime);
+  if (nowTs >= unlockTs) return "Unlock reached";
+  return `Unlocks ${formatDate(Number(unlockTs))}`;
+}
+
+function getSenderStateText(campaign: SenderCampaign): string {
+  const status = getSenderStreamStatus(campaign);
+  if (status === "Claimed") return "Fully claimed";
+  if (status === "Paused") return "Paused";
+  if (status === "Cancelled") return "Cancelled";
+  return `${campaign.leafCount} ${campaign.leafCount === 1 ? "recipient" : "recipients"}`;
+}
+
 export default function CampaignsPage() {
   const { publicKey } = useWallet();
   const { connection } = useConnection();
-  const program = useVestingProgram();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const [search, setSearch] = useState("");
   const [mintDecimals, setMintDecimals] = useState<Record<string, number>>({});
 
-  const fetchOnChain = useCallback(async () => {
-    if (!publicKey || !program) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const accounts = await (program.account as any).vestingTree.all([
-        {
-          memcmp: {
-            offset: 8,
-            bytes: publicKey.toBase58(),
-          },
-        },
-      ]);
+  const walletAddress = publicKey?.toBase58();
+  const allCampaignsQuery = useCampaignList({ limit: 100 });
+  const recipientCampaignsQuery = useBeneficiaryCampaigns(walletAddress);
+  const localCampaigns = useLocalCampaigns(walletAddress);
 
-      const mapped: Campaign[] = accounts.map(
-        (acc: { publicKey: PublicKey; account: any }) => ({
-          treeAddress: acc.publicKey.toBase58(),
-          creator: (acc.account.creator as PublicKey).toBase58(),
-          mint: (acc.account.mint as PublicKey).toBase58(),
-          totalSupply: BigInt((acc.account.totalSupply as BN).toString()),
-          totalClaimed: BigInt((acc.account.totalClaimed as BN).toString()),
-          paused: acc.account.paused as boolean,
-          cancelledAt: acc.account.cancelledAt
-            ? BigInt((acc.account.cancelledAt as BN).toString())
-            : null,
-          createdAt: (acc.account.createdAt as BN).toNumber(),
-          campaignId: (acc.account.campaignId as BN).toString(),
-        }),
+  const senderCampaigns = useMemo(() => {
+    const dbSenderCampaigns = (allCampaignsQuery.data?.campaigns ?? []).filter(
+      (campaign) => !walletAddress || campaign.creator === walletAddress,
+    ) as SenderCampaign[];
+
+    const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
+    const localOnly = localCampaigns.senderCampaigns.filter(
+      (campaign) => !seen.has(campaign.treeAddress),
+    );
+
+    return [...dbSenderCampaigns, ...localOnly];
+  }, [allCampaignsQuery.data?.campaigns, localCampaigns.senderCampaigns, walletAddress]);
+
+  const recipientCampaigns = useMemo(
+    () => {
+      const dbRecipientCampaigns = (recipientCampaignsQuery.data?.campaigns ?? []) as RecipientCampaign[];
+      const seen = new Set(dbRecipientCampaigns.map((campaign) => campaign.treeAddress));
+      const localOnly = localCampaigns.recipientCampaigns.filter(
+        (campaign) => !seen.has(campaign.treeAddress),
       );
 
-      mapped.sort((a, b) => b.createdAt - a.createdAt);
-      setCampaigns(mapped);
-
-      const uniqueMints = [...new Set(mapped.map((c) => c.mint))];
-      const decimalsMap: Record<string, number> = {};
-      await Promise.all(
-        uniqueMints.map(async (mint) => {
-          try {
-            const info = await connection.getParsedAccountInfo(new PublicKey(mint));
-            const parsed = (info.value?.data as any)?.parsed;
-            if (parsed?.type === "mint") decimalsMap[mint] = parsed.info.decimals;
-          } catch {}
-        }),
-      );
-      setMintDecimals(decimalsMap);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch campaigns");
-    } finally {
-      setLoading(false);
-    }
-  }, [publicKey, program, connection]);
+      return [...dbRecipientCampaigns, ...localOnly];
+    },
+    [localCampaigns.recipientCampaigns, recipientCampaignsQuery.data?.campaigns],
+  );
 
   useEffect(() => {
-    fetchOnChain();
-  }, [fetchOnChain]);
+    const uniqueMints = [
+      ...new Set([
+        ...senderCampaigns.map((item) => item.mint),
+        ...recipientCampaigns.map((item) => item.mint),
+      ]),
+    ];
+
+    if (uniqueMints.length === 0) {
+      setMintDecimals({});
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.all(
+      uniqueMints.map(async (mint) => {
+        try {
+          const info = await connection.getParsedAccountInfo(new PublicKey(mint));
+          const parsed = (info.value?.data as any)?.parsed;
+          return parsed?.type === "mint" ? [mint, parsed.info.decimals] as const : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Record<string, number> = {};
+      for (const entry of entries) {
+        if (entry) next[entry[0]] = entry[1];
+      }
+      setMintDecimals(next);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, senderCampaigns, recipientCampaigns]);
+
+  const rows = useMemo(() => {
+    const nowTs = BigInt(Math.floor(Date.now() / 1000));
+    const map = new Map<string, StreamRow>();
+
+    for (const campaign of senderCampaigns) {
+      map.set(campaign.treeAddress, {
+        treeAddress: campaign.treeAddress,
+        role: "sender",
+        primaryRole: "sender",
+        roleLabel: "Sender",
+        creator: campaign.creator,
+        mint: campaign.mint,
+        campaignId: campaign.campaignId,
+        createdAt: campaign.createdAt,
+        status: getSenderStreamStatus(campaign),
+        amountLabel: "Total Supply",
+        amountRaw: toBigInt(campaign.totalSupply),
+        nextLabel: "Recipients",
+        nextValue: getSenderStateText(campaign),
+        typeLabel: campaign.leafCount === 1 ? "Single Stream" : "Campaign",
+        counterpartyLabel: "Recipients",
+        counterpartyValue: `${campaign.leafCount}`,
+        metadata: campaign.metadata,
+      });
+    }
+
+    for (const campaign of recipientCampaigns) {
+      const row: StreamRow = {
+        treeAddress: campaign.treeAddress,
+        role: "recipient",
+        primaryRole: "recipient",
+        roleLabel: "Recipient",
+        creator: campaign.creator,
+        mint: campaign.mint,
+        campaignId: campaign.campaignId,
+        createdAt: campaign.createdAt,
+        status: getRecipientStreamStatus(campaign, nowTs),
+        amountLabel: "Allocated",
+        amountRaw: toBigInt(campaign.myLeaf.amount),
+        nextLabel: "Release",
+        nextValue: getReleaseStateText(campaign, nowTs),
+        typeLabel: getReleaseTypeLabel(campaign.myLeaf.releaseType),
+        counterpartyLabel: "Sender",
+        counterpartyValue: campaign.creator,
+        claimableRaw: getRecipientClaimableAmount(campaign, nowTs),
+        metadata: campaign.metadata,
+      };
+
+      const existing = map.get(campaign.treeAddress);
+      if (existing) {
+        map.set(campaign.treeAddress, {
+          ...row,
+          role: "both",
+          roleLabel: "Sender + Recipient",
+        });
+      } else {
+        map.set(campaign.treeAddress, row);
+      }
+    }
+
+    return [...map.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }, [recipientCampaigns, senderCampaigns]);
+
+  const filteredRows = rows.filter((row) => {
+    if (activeTab === "recipient" && row.role === "sender") return false;
+    if (activeTab === "sender" && row.role === "recipient") return false;
+
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+
+    return [
+      row.treeAddress,
+      row.mint,
+      row.creator,
+      row.counterpartyValue,
+      row.metadata?.name ?? "",
+      row.typeLabel,
+      String(row.campaignId),
+      row.status,
+    ].some((value) => value.toLowerCase().includes(q));
+  });
+
+  const tabCounts = useMemo(
+    () => ({
+      all: rows.length,
+      recipient: rows.filter((row) => row.role === "recipient" || row.role === "both").length,
+      sender: rows.filter((row) => row.role === "sender" || row.role === "both").length,
+    }),
+    [rows],
+  );
+
+  const hasLocalRows =
+    localCampaigns.senderCampaigns.length > 0 || localCampaigns.recipientCampaigns.length > 0;
+  const isLoading =
+    allCampaignsQuery.isLoading ||
+    recipientCampaignsQuery.isLoading ||
+    localCampaigns.isLoading;
+  const apiError =
+    allCampaignsQuery.error?.message ?? recipientCampaignsQuery.error?.message ?? null;
+  const error = rows.length === 0 ? apiError ?? localCampaigns.error : null;
+  const showingLocalFallback = !!apiError && hasLocalRows;
+
+  async function refreshAll() {
+    await Promise.all([allCampaignsQuery.refetch(), recipientCampaignsQuery.refetch()]);
+  }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">My Campaigns</h1>
-          <p className="mt-1 text-[13px] text-[#8b92a5]">
-            Vesting streams you created — fetched directly from Solana
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {publicKey && (
-            <button
-              onClick={fetchOnChain}
-              disabled={loading}
-              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[12px] text-[#8b92a5] transition hover:bg-white/[0.06] disabled:opacity-50"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={loading ? "animate-spin" : ""}
+    <div className="mx-auto max-w-6xl space-y-6 pb-12">
+      <div className="rounded-2xl border border-white/[0.08] bg-[#0d1117] p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-[24px] font-semibold text-white">Vesting Streams</h1>
+            <p className="mt-2 max-w-3xl text-[14px] text-[#8b92a5]">
+              Track streams you received and streams you created.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {publicKey && (
+              <button
+                onClick={refreshAll}
+                disabled={isLoading}
+                className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-[13px] text-white transition hover:bg-white/[0.05] disabled:opacity-50"
               >
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
-              Refresh
-            </button>
-          )}
-          <Link
-            href="/campaign/create"
-            className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-violet-500"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            New Stream
-          </Link>
+                Refresh
+              </button>
+            )}
+            <Link
+              href="/campaign/create"
+              className="rounded-xl bg-white px-4 py-2.5 text-[13px] font-medium text-[#0d1117] transition hover:opacity-90"
+            >
+              New Stream
+            </Link>
+          </div>
         </div>
       </div>
 
       {!publicKey ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] px-8 py-16 text-center">
-          <div className="text-[14px] font-medium text-white">Connect your wallet</div>
-          <p className="mt-1 text-[13px] text-[#8b92a5]">
-            Your campaigns will appear here once connected.
+        <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] px-8 py-16 text-center">
+          <h2 className="text-[16px] font-semibold text-white">Connect your wallet</h2>
+          <p className="mt-2 text-[13px] text-[#8b92a5]">
+            Your sender and recipient streams will appear here.
           </p>
-        </div>
-      ) : loading ? (
-        <div className="flex items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02] py-16">
-          <div className="flex items-center gap-3 text-[13px] text-[#8b92a5]">
-            <svg className="h-5 w-5 animate-spin text-violet-400" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-20" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-            Fetching from Solana...
-          </div>
-        </div>
-      ) : error ? (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-5 py-4 text-[13px] text-red-300">
-          {error}
-        </div>
-      ) : campaigns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] px-8 py-16 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04] text-[#555d73]">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-          </div>
-          <h3 className="mt-4 text-[14px] font-medium text-white">No campaigns yet</h3>
-          <p className="mt-1 text-[13px] text-[#8b92a5]">
-            Create your first vesting stream to get started.
-          </p>
-          <Link
-            href="/campaign/create"
-            className="mt-4 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-violet-500"
-          >
-            Create Stream
-          </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-white/[0.06]">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Stream
-                </th>
-                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Mint
-                </th>
-                <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Supply
-                </th>
-                <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Progress
-                </th>
-                <th className="px-5 py-3 text-center text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Status
-                </th>
-                <th className="px-5 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#555d73]">
-                  Created
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {campaigns.map((c) => {
-                const pct = progressPercent(c.totalClaimed, c.totalSupply);
+        <>
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {TABS.map((tab) => {
+                  const active = activeTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`rounded-full px-4 py-2 text-[13px] transition ${
+                        active
+                          ? "bg-white text-[#0d1117]"
+                          : "border border-white/[0.08] bg-white/[0.03] text-[#8b92a5]"
+                      }`}
+                    >
+                      {tab.label} ({tabCounts[tab.key]})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="w-full lg:w-[320px]">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by campaign, address, or token"
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20"
+                />
+              </div>
+            </div>
+          </div>
+
+          {showingLocalFallback ? (
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-5 py-4 text-[13px] text-amber-200">
+              Indexed API is unavailable right now. Showing streams recovered from local cache when possible.
+            </div>
+          ) : null}
+
+          {isLoading ? (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-8 py-16 text-center text-[13px] text-[#8b92a5]">
+              Loading streams...
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-5 py-4 text-[13px] text-red-300">
+              {error}
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <EmptyState
+              title="No streams found"
+              body="Try a different tab or search term."
+              actionHref="/campaign/create"
+              actionLabel="Create stream"
+            />
+          ) : (
+            <div className="space-y-4">
+              {filteredRows.map((row) => {
+                const decimals = mintDecimals[row.mint] ?? 0;
+                const amountDisplay = formatWithDecimals(row.amountRaw, decimals);
+                const claimableDisplay =
+                  row.claimableRaw !== undefined
+                    ? formatWithDecimals(row.claimableRaw, decimals)
+                    : null;
+
                 return (
-                  <tr
-                    key={c.treeAddress}
-                    className="border-b border-white/[0.04] transition-colors last:border-b-0 hover:bg-white/[0.02]"
-                  >
-                    <td className="px-5 py-3.5">
-                      <Link
-                        href={`/campaign/${c.treeAddress}`}
-                        className="font-mono text-[13px] text-violet-400 hover:text-violet-300"
-                      >
-                        {truncAddr(c.treeAddress)}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-[13px] text-[#8b92a5]">
-                      {truncAddr(c.mint)}
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-mono text-[13px] text-white">
-                      {formatWithDecimals(c.totalSupply, mintDecimals[c.mint] ?? 0)}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-white/[0.06]">
-                          <div
-                            className="h-full rounded-full bg-violet-500"
-                            style={{ width: `${Math.min(pct, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-[12px] tabular-nums text-[#8b92a5]">{pct}%</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <StatusBadge paused={c.paused} cancelledAt={c.cancelledAt} />
-                    </td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#8b92a5]">
-                      {c.createdAt ? formatDate(c.createdAt) : "—"}
-                    </td>
-                  </tr>
+                  <CampaignRow
+                    key={row.treeAddress}
+                    treeAddress={row.treeAddress}
+                    role={row.role}
+                    status={row.status}
+                    typeLabel={row.typeLabel}
+                    title={row.metadata?.name || `Campaign #${row.campaignId}`}
+                    amountLabel={row.amountLabel}
+                    amountDisplay={amountDisplay}
+                    claimableDisplay={row.primaryRole === "recipient" ? claimableDisplay : null}
+                    counterpartyLabel={row.counterpartyLabel}
+                    counterpartyValue={truncateAddress(row.counterpartyValue)}
+                    mintValue={truncateAddress(row.mint)}
+                    nextLabel={row.nextLabel}
+                    nextValue={row.nextValue}
+                    createdAtLabel={formatDate(row.createdAt)}
+                  />
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

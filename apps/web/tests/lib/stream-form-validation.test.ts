@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   validatePublicKey,
   validateAmount,
+  validateAmountWithDecimals,
   validateCampaignId,
   validateSchedule,
   validateMilestoneIdx,
@@ -57,6 +58,20 @@ describe("validateAmount", () => {
   });
 });
 
+describe("validateAmountWithDecimals", () => {
+  it("accepts decimals when mint precision is known", () => {
+    expect(validateAmountWithDecimals("10.5", 6)).toBeNull();
+  });
+
+  it("rejects too many decimal places", () => {
+    expect(validateAmountWithDecimals("10.1234567", 6)).toBe("Supports up to 6 decimal places.");
+  });
+
+  it("rejects non-positive decimal amounts", () => {
+    expect(validateAmountWithDecimals("0.000000", 6)).toBe("Must be greater than zero.");
+  });
+});
+
 describe("validateCampaignId", () => {
   it("returns null for valid ID", () => {
     expect(validateCampaignId("1")).toBeNull();
@@ -99,6 +114,18 @@ describe("validateSchedule", () => {
   it("returns error for NaN dates", () => {
     expect(validateSchedule(NaN, 200, 300, 1)).toBe("All dates are required.");
   });
+
+  it("requires cliff end equality for cliff vesting", () => {
+    expect(validateSchedule(100, 200, 300, 0)).toBe("For cliff vesting, end time should equal cliff time.");
+  });
+
+  it("accepts milestone unlock equality", () => {
+    expect(validateSchedule(100, 200, 200, 2)).toBeNull();
+  });
+
+  it("requires unlock equality for milestone vesting", () => {
+    expect(validateSchedule(100, 200, 300, 2)).toBe("For milestone vesting, end time should equal unlock time.");
+  });
 });
 
 describe("validateMilestoneIdx", () => {
@@ -128,6 +155,7 @@ describe("validateCreateStreamForm", () => {
     beneficiary: "11111111111111111111111111111111",
     mintAddress: "11111111111111111111111111111111",
     amount: "1000000",
+    mintDecimals: null,
     campaignId: "1",
     startUnix: 100,
     cliffUnix: 200,
@@ -157,9 +185,30 @@ describe("validateCreateStreamForm", () => {
     expect(errors.milestoneIdx).toBe("Must be 0–255.");
   });
 
+  it("accepts milestone forms when end equals unlock and index is valid", () => {
+    const errors = validateCreateStreamForm({
+      ...validForm,
+      releaseType: 2,
+      cliffUnix: 200,
+      endUnix: 200,
+      milestoneIdx: "42",
+    });
+    expect(errors.schedule).toBeNull();
+    expect(errors.milestoneIdx).toBeNull();
+  });
+
   it("skips milestoneIdx validation for non-milestone types", () => {
     const errors = validateCreateStreamForm({ ...validForm, releaseType: 1, milestoneIdx: "300" });
     expect(errors.milestoneIdx).toBeUndefined();
+  });
+
+  it("accepts decimal amount when mint decimals are known", () => {
+    const errors = validateCreateStreamForm({
+      ...validForm,
+      amount: "10.25",
+      mintDecimals: 6,
+    });
+    expect(errors.amount).toBeNull();
   });
 });
 

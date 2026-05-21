@@ -11,10 +11,36 @@ export function validatePublicKey(value: string): string | null {
 }
 
 export function validateAmount(value: string): string | null {
-  if (!value.trim()) return "Required.";
-  if (!/^\d+$/.test(value.trim())) return "Must be a positive integer (no decimals).";
+  return validateAmountWithDecimals(value, null);
+}
+
+export function validateAmountWithDecimals(
+  value: string,
+  mintDecimals: number | null,
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Required.";
+
+  if (mintDecimals === null) {
+    if (!/^\d+$/.test(trimmed)) return "Must be a positive integer (no decimals).";
+    try {
+      if (BigInt(trimmed) <= 0n) return "Must be greater than zero.";
+    } catch {
+      return "Invalid number.";
+    }
+    return null;
+  }
+
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return "Must be a positive number.";
+
+  const [whole, frac = ""] = trimmed.split(".");
+  if (frac.length > mintDecimals) {
+    return `Supports up to ${mintDecimals} decimal places.`;
+  }
+
+  const normalized = `${whole}${frac.padEnd(mintDecimals, "0")}`.replace(/^0+/, "") || "0";
   try {
-    if (BigInt(value.trim()) <= 0n) return "Must be greater than zero.";
+    if (BigInt(normalized) <= 0n) return "Must be greater than zero.";
   } catch {
     return "Invalid number.";
   }
@@ -37,8 +63,10 @@ export function validateSchedule(
   if (isNaN(startUnix) || isNaN(cliffUnix) || isNaN(endUnix)) return "All dates are required.";
   if (cliffUnix < startUnix) return "Cliff time must be on or after start time.";
   if (endUnix < cliffUnix) return "End time must be on or after cliff time.";
-  if (releaseType === 0 && endUnix !== cliffUnix && endUnix < cliffUnix)
+  if (releaseType === 0 && endUnix !== cliffUnix)
     return "For cliff vesting, end time should equal cliff time.";
+  if (releaseType === 2 && endUnix !== cliffUnix)
+    return "For milestone vesting, end time should equal unlock time.";
   return null;
 }
 
@@ -55,6 +83,7 @@ export function validateCreateStreamForm(form: {
   beneficiary: string;
   mintAddress: string;
   amount: string;
+  mintDecimals: number | null;
   campaignId: string;
   startUnix: number;
   cliffUnix: number;
@@ -65,7 +94,7 @@ export function validateCreateStreamForm(form: {
   const errors: FormErrors = {};
   errors.beneficiary = validatePublicKey(form.beneficiary);
   errors.mintAddress = validatePublicKey(form.mintAddress);
-  errors.amount = validateAmount(form.amount);
+  errors.amount = validateAmountWithDecimals(form.amount, form.mintDecimals);
   errors.campaignId = validateCampaignId(form.campaignId);
   errors.schedule = validateSchedule(form.startUnix, form.cliffUnix, form.endUnix, form.releaseType);
   if (form.releaseType === 2) {

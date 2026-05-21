@@ -11,11 +11,11 @@ import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { unixToDatetimeLocal, datetimeLocalToUnix } from "@/lib/stream/datetime";
 import { loadStreamScheduleLocal } from "@/lib/stream/persist";
-import { CancelConfirmDialog } from "@/components/campaign/CancelConfirmDialog";
-import { MilestoneStatusBadge } from "@/components/campaign/TriggerMilestoneButton";
-import { PauseToggleButton } from "@/components/campaign/PauseToggleButton";
-import { WithdrawUnvestedButton } from "@/components/campaign/WithdrawUnvestedButton";
-import { ClaimWithProofButton } from "@/components/campaign/ClaimWithProofButton";
+import { CancelConfirmDialog } from "@/components/campaign/detail/CancelConfirmDialog";
+import { MilestoneStatusBadge } from "@/components/campaign/detail/MilestoneStatusBadge";
+import { PauseToggleButton } from "@/components/campaign/detail/PauseToggleButton";
+import { WithdrawUnvestedButton } from "@/components/campaign/detail/WithdrawUnvestedButton";
+import { ClaimWithProofButton } from "@/components/campaign/detail/ClaimWithProofButton";
 import { useToast } from "@/components/shell/Toast";
 import {
   getVestingTypeLabel,
@@ -49,6 +49,17 @@ type TreeState = {
 };
 
 type ScheduleSource = "none" | "api" | "local" | "manual";
+type MilestoneUiMeta = {
+  name: string | null;
+  owner: string | null;
+  mode: string | null;
+  evidence: string | null;
+};
+type UrlScheduleLoadResult = {
+  loaded: boolean;
+  beneficiary: string | null;
+  milestoneUi: MilestoneUiMeta;
+};
 
 /* ------------------------------------------------------------------ */
 /*  Vesting math (unchanged business logic)                           */
@@ -145,6 +156,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const [milestoneIdx, setMilestoneIdx] = useState("0");
   const [scheduleSource, setScheduleSource] = useState<ScheduleSource>("none");
   const [showManualSchedule, setShowManualSchedule] = useState(false);
+  const [expectedBeneficiary, setExpectedBeneficiary] = useState<string | null>(null);
+  const [milestoneUi, setMilestoneUi] = useState<MilestoneUiMeta>({
+    name: null,
+    owner: null,
+    mode: null,
+    evidence: null,
+  });
 
   const [txStatus, setTxStatus] = useState<
     { type: "idle" } | { type: "loading" } | { type: "success"; sig: string } | { type: "error"; msg: string }
@@ -152,6 +170,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const treeMint = treeState?.mint;
 
   const isSingleLeaf = treeState?.leafCount === 1;
   const beneficiaryKey = publicKey?.toBase58();
@@ -206,25 +225,36 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   }, [fetchTree]);
 
   useEffect(() => {
-    if (!treeState) return;
-    connection.getParsedAccountInfo(treeState.mint).then((info) => {
+    if (!treeMint) return;
+    connection.getParsedAccountInfo(treeMint).then((info) => {
       const parsed = (info.value?.data as any)?.parsed;
       if (parsed?.type === "mint") {
         setMintDecimals(parsed.info.decimals);
       }
     }).catch(() => {});
-  }, [treeState?.mint?.toBase58(), connection]);
+  }, [treeMint, connection]);
 
   /* ---- Load schedule from API / local / URL / manual ---- */
 
-  function tryLoadFromUrl(): boolean {
-    if (typeof window === "undefined") return false;
+  function tryLoadFromUrl(): UrlScheduleLoadResult {
+    if (typeof window === "undefined") {
+      return {
+        loaded: false,
+        beneficiary: null,
+        milestoneUi: { name: null, owner: null, mode: null, evidence: null },
+      };
+    }
     const url = new URL(window.location.href);
     const rt = url.searchParams.get("rt");
     const st = url.searchParams.get("st");
     const ct = url.searchParams.get("ct");
     const et = url.searchParams.get("et");
     const mi = url.searchParams.get("mi");
+    const bf = url.searchParams.get("bf");
+    const mn = url.searchParams.get("mn");
+    const mo = url.searchParams.get("mo");
+    const mm = url.searchParams.get("mm");
+    const me = url.searchParams.get("me");
     if (ct && et) {
       applyScheduleToForm(
         {
@@ -236,9 +266,22 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         },
         { setReleaseType, setStartTime, setCliffTime, setEndTime, setMilestoneIdx },
       );
-      return true;
+      return {
+        loaded: true,
+        beneficiary: bf,
+        milestoneUi: {
+          name: mn,
+          owner: mo,
+          mode: mm,
+          evidence: me,
+        },
+      };
     }
-    return false;
+    return {
+      loaded: false,
+      beneficiary: null,
+      milestoneUi: { name: null, owner: null, mode: null, evidence: null },
+    };
   }
 
   useEffect(() => {
@@ -252,6 +295,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         setEndTime,
         setMilestoneIdx,
       });
+      setExpectedBeneficiary(proofQuery.data.leaf.beneficiary);
       setScheduleSource("api");
       return;
     }
@@ -275,11 +319,23 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             setMilestoneIdx,
           },
         );
+        setExpectedBeneficiary(local.beneficiary ?? null);
+        setMilestoneUi({
+          name: local.milestoneName ?? null,
+          owner: local.milestoneOwner ?? null,
+          mode: local.milestoneMode ?? null,
+          evidence: local.milestoneEvidence ?? null,
+        });
         setScheduleSource("local");
-      } else if (tryLoadFromUrl()) {
-        setScheduleSource("local");
-      } else if (scheduleSource === "none") {
-        setScheduleSource("manual");
+      } else {
+        const urlSchedule = tryLoadFromUrl();
+        if (urlSchedule.loaded) {
+          setExpectedBeneficiary(urlSchedule.beneficiary);
+          setMilestoneUi(urlSchedule.milestoneUi);
+          setScheduleSource("local");
+        } else if (scheduleSource === "none") {
+          setScheduleSource("manual");
+        }
       }
     }
   }, [
@@ -324,13 +380,32 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     publicKey && treeState?.cancelAuthority ? publicKey.equals(treeState.cancelAuthority) : false;
   const isPauseAuthority =
     publicKey && treeState?.pauseAuthority ? publicKey.equals(treeState.pauseAuthority) : false;
+  const isCliff = releaseType === 0;
+  const isLinear = releaseType === 1;
+  const isMilestone = releaseType === 2;
+  const beneficiaryMismatch =
+    !!publicKey && !!expectedBeneficiary && publicKey.toBase58() !== expectedBeneficiary;
   const isMultiRecipient = (treeState?.leafCount ?? 0) > 1;
   const milestoneBitmap = claimRecordQuery.data?.milestoneBitmap
     ? new Uint8Array(claimRecordQuery.data.milestoneBitmap)
     : new Uint8Array(32);
   const milestoneTriggered = isMilestoneTriggered(milestoneBitmap, Number(milestoneIdx));
+  const milestoneLifecycleLabel = milestoneTriggered
+    ? "Claimed"
+    : nowTs >= cliffTsBigint
+      ? "Ready To Claim"
+      : "Awaiting Unlock";
+  const milestoneModeLabel = milestoneUi.mode
+    ? ({
+      manual_review: "Manual Review",
+      ops_signoff: "Ops Signoff",
+      dao_vote: "DAO Vote",
+    } as const)[milestoneUi.mode as "manual_review" | "ops_signoff" | "dao_vote"] ?? milestoneUi.mode
+    : "Time-gated milestone";
 
-  const withdrawDisabledReason = getWithdrawDisabledReason({
+  const withdrawDisabledReason = beneficiaryMismatch && isSingleLeaf
+    ? `Only beneficiary ${truncateAddress(expectedBeneficiary)} can claim`
+    : getWithdrawDisabledReason({
     loading: txStatus.type === "loading",
     paused: treeState?.paused ?? false,
     claimable,
@@ -338,7 +413,20 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     releaseType,
     nowTs,
     cliffTs: cliffTsBigint,
+    milestoneIdx: Number(milestoneIdx),
+    milestoneBitmap,
   });
+  const claimableLabel =
+    isSingleLeaf && beneficiaryMismatch ? "Beneficiary Claimable" : "Claimable";
+  const scheduleSummary =
+    isCliff
+      ? "Full release at a single time."
+      : isLinear
+        ? "Gradual release from cliff to end."
+        : "Single indexed release with milestone context.";
+  const claimActionLabel = beneficiaryMismatch && expectedBeneficiary
+    ? `Only ${truncateAddress(expectedBeneficiary)} can claim`
+    : withdrawDisabledReason ?? `Claim ${formatTokenAmount(claimable)}`;
 
   /* ---- Status helpers ---- */
 
@@ -394,6 +482,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
   async function handleWithdraw() {
     if (!program || !publicKey || !treeState) return;
+    if (beneficiaryMismatch && expectedBeneficiary) {
+      toast(
+        `Only beneficiary ${truncateAddress(expectedBeneficiary)} can claim this stream.`,
+        "error",
+      );
+      return;
+    }
 
     setTxStatus({ type: "loading" });
 
@@ -500,286 +595,329 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   if (!treeState) return null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-
-      {/* ============================================================ */}
-      {/*  1. HEADER ROW                                               */}
-      {/* ============================================================ */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-[22px] font-semibold text-white">Vesting Stream</h1>
-
-        {/* Status badge */}
-        <span
-          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${statusBadgeClass}`}
-        >
-          {statusLabel}
-        </span>
-
-        {/* Vesting type badge (only shown once schedule is available) */}
-        {cliffTime && (
-          <span
-            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${getVestingTypeBadgeColor(releaseType)}`}
-          >
-            {getVestingTypeLabel(releaseType)}
-          </span>
-        )}
-
-        {/* Cliff countdown -- prominent display for cliff vesting */}
-        {releaseType === 0 && cliffTime && nowTs < cliffTsBigint && (
-          <span className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[13px] font-medium text-amber-400">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            Cliff in {formatCountdown(cliffTsBigint, nowTs)}
-          </span>
-        )}
-
-        {/* Milestone status */}
-        {releaseType === 2 && cliffTime && (
-          <span
-            className={`ml-auto inline-flex items-center gap-1.5 rounded-xl border px-3 py-1 text-[13px] font-medium ${
-              milestoneTriggered
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                : "border-white/[0.06] bg-white/[0.02] text-[#555d73]"
-            }`}
-          >
-            {milestoneTriggered ? "Milestone unlocked" : "Milestone locked"}
-          </span>
-        )}
-      </div>
-
-      {/* ============================================================ */}
-      {/*  2. METRIC CARDS ROW                                         */}
-      {/* ============================================================ */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard label="Total Supply" value={formatTokenAmount(totalSupply)} />
-        <MetricCard label="Total Claimed" value={formatTokenAmount(totalClaimed)} />
-        <MetricCard label="Vested" value={`${progress}%`} />
-        <MetricCard label="Claimable" value={formatTokenAmount(claimable)} accent />
-      </div>
-
-      {/* ============================================================ */}
-      {/*  3. PROGRESS BAR                                             */}
-      {/* ============================================================ */}
-      {cliffTime && endTime && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-[#555d73]">
-              Vesting Progress
-            </span>
-            <span className="text-[13px] font-medium text-white">{progress}%</span>
-          </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-white/[0.04]">
-            <div
-              className="h-full rounded-full bg-violet-600 transition-all duration-500"
-              style={{ width: `${Math.min(progress, 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================ */}
-      {/*  4. CAMPAIGN DETAILS CARD                                    */}
-      {/* ============================================================ */}
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
-        <h2 className="text-[15px] font-medium text-white">Campaign Details</h2>
-
-        <div className="grid gap-3">
-          <DetailRow label="Tree Address" value={treeAddress} mono />
-          <DetailRow label="Creator" value={treeState.creator.toBase58()} mono />
-          <DetailRow label="Mint" value={treeState.mint.toBase58()} mono />
-          <DetailRow label="Campaign ID" value={treeState.campaignId.toString()} />
-          <DetailRow label="Created" value={formatDate(treeState.createdAt.toNumber())} />
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/*  5. VESTING SCHEDULE CARD                                    */}
-      {/* ============================================================ */}
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-medium text-white">Vesting Schedule</h2>
-          {isSingleLeaf && scheduleLocked && (
-            <button
-              type="button"
-              onClick={() => setShowManualSchedule(true)}
-              className="text-[11px] text-violet-400 hover:text-violet-300 underline underline-offset-2 transition-colors"
-            >
-              Edit manually
-            </button>
-          )}
-        </div>
-
-        <p className="text-[11px] text-[#555d73] leading-relaxed">{scheduleHint}</p>
-
-        {proofQuery.isLoading && isSingleLeaf && (
-          <p className="text-[11px] text-[#555d73]">Loading schedule...</p>
-        )}
-
-        {/* Release type select */}
-        <div>
-          <label className="block text-[12px] text-[#555d73] mb-1.5">Release Type</label>
-          <select
-            value={releaseType}
-            onChange={(e) => setReleaseType(Number(e.target.value))}
-            disabled={scheduleLocked}
-            className="w-full rounded-xl border border-white/[0.08] bg-[#11141c] px-4 py-2.5 text-[13px] text-white outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <option value={0}>Cliff</option>
-            <option value={1}>Linear</option>
-            <option value={2}>Milestone</option>
-          </select>
-        </div>
-
-        {/* Time fields */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="mx-auto max-w-6xl space-y-6 pb-12">
+      <div className="rounded-2xl border border-white/[0.08] bg-[#0d1117] p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <label className="block text-[12px] text-[#555d73] mb-1.5">Start</label>
-            <input
-              type="datetime-local"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              disabled={scheduleLocked}
-              className="w-full rounded-xl border border-white/[0.08] bg-[#11141c] px-3 py-2.5 text-[13px] text-white outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-          <div>
-            <label className="block text-[12px] text-[#555d73] mb-1.5">Cliff</label>
-            <input
-              type="datetime-local"
-              value={cliffTime}
-              onChange={(e) => setCliffTime(e.target.value)}
-              disabled={scheduleLocked}
-              required
-              className="w-full rounded-xl border border-white/[0.08] bg-[#11141c] px-3 py-2.5 text-[13px] text-white outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-          <div>
-            <label className="block text-[12px] text-[#555d73] mb-1.5">End</label>
-            <input
-              type="datetime-local"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              disabled={scheduleLocked}
-              required
-              className="w-full rounded-xl border border-white/[0.08] bg-[#11141c] px-3 py-2.5 text-[13px] text-white outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-        </div>
-
-        {/* Milestone index (conditional) */}
-        {releaseType === 2 && (
-          <div>
-            <label className="block text-[12px] text-[#555d73] mb-1.5">Milestone Index</label>
-            <input
-              type="number"
-              min="0"
-              max="255"
-              value={milestoneIdx}
-              onChange={(e) => setMilestoneIdx(e.target.value)}
-              disabled={scheduleLocked}
-              className="w-full rounded-xl border border-white/[0.08] bg-[#11141c] px-4 py-2.5 text-[13px] text-white outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* ============================================================ */}
-      {/*  6. ACTIONS CARD                                             */}
-      {/* ============================================================ */}
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
-        <h2 className="text-[15px] font-medium text-white">Actions</h2>
-
-        {/* Primary: Claim Tokens — single vs multi-recipient */}
-        {isMultiRecipient && program ? (
-          <ClaimWithProofButton
-            program={program}
-            publicKey={publicKey}
-            treePubkey={new PublicKey(treeAddress)}
-            treeAddress={treeAddress}
-            mint={treeState.mint}
-            vault={treeState.vault}
-            vaultAuthority={treeState.vaultAuthority}
-            onSuccess={fetchTree}
-            toast={toast}
-          />
-        ) : (
-          <button
-            onClick={handleWithdraw}
-            disabled={!!withdrawDisabledReason}
-            className="w-full rounded-xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white transition hover:bg-violet-500 active:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {txStatus.type === "loading" ? (
-              <span className="inline-flex items-center gap-2">
-                <Spinner size={16} />
-                Claiming...
-              </span>
-            ) : (
-              withdrawDisabledReason ?? `Claim ${formatTokenAmount(claimable)} Tokens`
-            )}
-          </button>
-        )}
-
-        {/* Milestone status badge */}
-        <MilestoneStatusBadge
-          isMilestoneType={releaseType === 2}
-          alreadyTriggered={milestoneTriggered}
-          milestoneIdx={Number(milestoneIdx)}
-          cliffTime={cliffTsBigint}
-          nowTs={nowTs}
-        />
-
-        {/* Pause/Unpause toggle */}
-        {program && (
-          <PauseToggleButton
-            program={program}
-            publicKey={publicKey}
-            treePubkey={new PublicKey(treeAddress)}
-            paused={treeState.paused}
-            isPauseAuthority={isPauseAuthority}
-            cancelledAt={cancelledAtBigint}
-            onSuccess={fetchTree}
-            toast={toast}
-          />
-        )}
-
-        {/* Cancel Stream */}
-        {(isCreator || isCancelAuthority) && !treeState.cancelledAt && (
-          <button
-            onClick={() => setCancelOpen(true)}
-            className="w-full rounded-xl border border-red-500/20 py-2.5 text-[13px] font-medium text-red-400 transition hover:border-red-500/40 hover:bg-red-500/5 active:bg-red-500/10"
-          >
-            Cancel Stream
-          </button>
-        )}
-
-        {/* Withdraw Unvested (post-cancel, creator only) */}
-        {program && (
-          <WithdrawUnvestedButton
-            program={program}
-            publicKey={publicKey}
-            treePubkey={new PublicKey(treeAddress)}
-            mint={treeState.mint}
-            vaultAuthority={treeState.vaultAuthority}
-            vault={treeState.vault}
-            cancelledAt={cancelledAtBigint}
-            isCreator={isCreator}
-            nowTs={nowTs}
-            onSuccess={fetchTree}
-            toast={toast}
-          />
-        )}
-
-        {/* Transaction status */}
-        {txStatus.type === "success" && (
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <p className="text-[12px] text-[#555d73]">Transaction signature</p>
-            <p className="mt-1 break-all font-mono text-[11px] text-emerald-400">
-              {txStatus.sig}
+            <h1 className="text-[24px] font-semibold text-white">Vesting Stream</h1>
+            <p className="mt-2 max-w-3xl text-[14px] text-[#8b92a5]">
+              Review the stream status, schedule, and claim actions.
             </p>
           </div>
-        )}
+          <div className="flex flex-wrap gap-2">
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-medium ${statusBadgeClass}`}
+            >
+              {statusLabel}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-medium ${getVestingTypeBadgeColor(releaseType)}`}
+            >
+              {getVestingTypeLabel(releaseType)}
+            </span>
+            {isCliff && cliffTime && nowTs < cliffTsBigint && (
+              <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[12px] font-medium text-amber-400">
+                Unlocks in {formatCountdown(cliffTsBigint, nowTs)}
+              </span>
+            )}
+            {isMilestone && (
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-medium ${
+                  milestoneTriggered
+                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                    : "border-white/[0.08] bg-white/[0.02] text-[#8b92a5]"
+                }`}
+              >
+                {milestoneLifecycleLabel}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <MetricCard label="Total Supply" value={formatTokenAmount(totalSupply)} />
+            <MetricCard label="Total Claimed" value={formatTokenAmount(totalClaimed)} />
+            <MetricCard label="Vested" value={isMilestone ? milestoneLifecycleLabel : `${progress}%`} />
+            <MetricCard label={claimableLabel} value={formatTokenAmount(claimable)} accent />
+          </div>
+
+          {!isMilestone && cliffTime && endTime && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+              <SectionHeader
+                title="Progress"
+                caption={scheduleSummary}
+              />
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-[12px] text-[#8b92a5]">
+                  <span>Vested</span>
+                  <span className="font-medium text-white">{progress}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.05]">
+                  <div
+                    className="h-full rounded-full bg-white transition-all duration-500"
+                    style={{ width: `${Math.min(progress, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isMilestone && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+              <SectionHeader
+                title={milestoneUi.name ?? `Milestone #${milestoneIdx}`}
+                caption="Milestone release details."
+              />
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Milestone Index" value={`#${milestoneIdx}`} />
+                <MetricCard label="Trigger Style" value={milestoneModeLabel} />
+                <MetricCard label="Unlock" value={nowTs >= cliffTsBigint ? "Reached" : "Pending"} />
+                <MetricCard label="Claim State" value={milestoneTriggered ? "Claimed" : "Open"} accent />
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                <WorkflowStep
+                  step="Evidence"
+                  title={milestoneUi.evidence ? "Recorded" : "Not provided"}
+                  body={milestoneUi.evidence ?? "No milestone notes were attached to this stream."}
+                />
+                <WorkflowStep
+                  step="Approval"
+                  title={milestoneUi.owner ?? "Not specified"}
+                  body={milestoneUi.owner ?? "No approval owner was attached to this stream."}
+                />
+                <WorkflowStep
+                  step="Claim"
+                  title={
+                    milestoneTriggered
+                      ? "Completed"
+                      : nowTs >= cliffTsBigint
+                        ? "Available now"
+                        : `Opens in ${formatCountdown(cliffTsBigint, nowTs)}`
+                  }
+                  body={
+                    nowTs >= cliffTsBigint
+                      ? "The beneficiary can submit the claim."
+                      : "Claim becomes available at the configured unlock time."
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+            <SectionHeader
+              title="Details"
+              caption="Core stream information."
+            />
+            <div className="mt-5 grid gap-3">
+              <DetailRow label="Tree Address" value={treeAddress} mono />
+              <DetailRow label="Creator" value={treeState.creator.toBase58()} mono />
+              <DetailRow label="Mint" value={treeState.mint.toBase58()} mono />
+              {expectedBeneficiary && (
+                <DetailRow label="Beneficiary" value={expectedBeneficiary} mono />
+              )}
+              <DetailRow label="Campaign ID" value={treeState.campaignId.toString()} />
+              <DetailRow label="Created" value={formatDate(treeState.createdAt.toNumber())} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <SectionHeader
+                title="Schedule"
+                caption={scheduleHint}
+              />
+              {isSingleLeaf && scheduleLocked && (
+                <button
+                  type="button"
+                  onClick={() => setShowManualSchedule(true)}
+                  className="text-[12px] font-medium text-white underline underline-offset-4"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {proofQuery.isLoading && isSingleLeaf && (
+              <p className="mt-4 text-[12px] text-[#8b92a5]">Loading schedule...</p>
+            )}
+
+            <div className="mt-5 space-y-4">
+              <FieldRow
+                label="Vesting Type"
+                input={(
+                  <select
+                    value={releaseType}
+                    onChange={(e) => setReleaseType(Number(e.target.value))}
+                    disabled={scheduleLocked}
+                    className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20 disabled:opacity-50"
+                  >
+                    <option value={0}>Cliff</option>
+                    <option value={1}>Linear</option>
+                    <option value={2}>Milestone</option>
+                  </select>
+                )}
+              />
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <FieldRow
+                  label="Start Time"
+                  input={(
+                    <input
+                      type="datetime-local"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      disabled={scheduleLocked}
+                      className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20 disabled:opacity-50"
+                    />
+                  )}
+                />
+                <FieldRow
+                  label={isMilestone ? "Unlock Time" : isCliff ? "Unlock Time" : "Cliff Time"}
+                  input={(
+                    <input
+                      type="datetime-local"
+                      value={cliffTime}
+                      onChange={(e) => setCliffTime(e.target.value)}
+                      disabled={scheduleLocked}
+                      className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20 disabled:opacity-50"
+                    />
+                  )}
+                />
+                <FieldRow
+                  label="End Time"
+                  input={(
+                    <input
+                      type="datetime-local"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      disabled={scheduleLocked}
+                      className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20 disabled:opacity-50"
+                    />
+                  )}
+                />
+              </div>
+
+              {isMilestone && (
+                <FieldRow
+                  label="Milestone Index"
+                  input={(
+                    <input
+                      type="number"
+                      min="0"
+                      max="255"
+                      value={milestoneIdx}
+                      onChange={(e) => setMilestoneIdx(e.target.value)}
+                      disabled={scheduleLocked}
+                      className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 text-[13px] text-white outline-none transition focus:border-white/20 disabled:opacity-50"
+                    />
+                  )}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 lg:sticky lg:top-6">
+            <SectionHeader
+              title="Actions"
+              caption="Claim and manage this stream."
+            />
+
+            {isSingleLeaf && beneficiaryMismatch && expectedBeneficiary && (
+              <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] leading-6 text-amber-300">
+                Connected wallet does not match the beneficiary.
+              </div>
+            )}
+
+            {isSingleLeaf && !expectedBeneficiary && scheduleSource !== "api" && (
+              <div className="mt-5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] leading-6 text-[#8b92a5]">
+                Beneficiary could not be verified from indexed data.
+              </div>
+            )}
+
+            <div className="mt-5 space-y-4">
+              {isMultiRecipient && program ? (
+                <ClaimWithProofButton
+                  program={program}
+                  publicKey={publicKey}
+                  treePubkey={new PublicKey(treeAddress)}
+                  treeAddress={treeAddress}
+                  mint={treeState.mint}
+                  vault={treeState.vault}
+                  vaultAuthority={treeState.vaultAuthority}
+                  onSuccess={fetchTree}
+                  toast={toast}
+                />
+              ) : (
+                <button
+                  onClick={handleWithdraw}
+                  disabled={!!withdrawDisabledReason}
+                  className="w-full rounded-xl bg-white px-4 py-3 text-[14px] font-semibold text-[#0d1117] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {txStatus.type === "loading" ? "Claiming..." : claimActionLabel}
+                </button>
+              )}
+
+              <MilestoneStatusBadge
+                isMilestoneType={isMilestone}
+                alreadyTriggered={milestoneTriggered}
+                milestoneIdx={Number(milestoneIdx)}
+                cliffTime={cliffTsBigint}
+                nowTs={nowTs}
+              />
+
+              {program && (
+                <PauseToggleButton
+                  program={program}
+                  publicKey={publicKey}
+                  treePubkey={new PublicKey(treeAddress)}
+                  paused={treeState.paused}
+                  isPauseAuthority={isPauseAuthority}
+                  cancelledAt={cancelledAtBigint}
+                  onSuccess={fetchTree}
+                  toast={toast}
+                />
+              )}
+
+              {treeState.cancellable && (isCreator || isCancelAuthority) && !treeState.cancelledAt && (
+                <button
+                  onClick={() => setCancelOpen(true)}
+                  className="w-full rounded-xl border border-red-500/20 px-4 py-3 text-[13px] font-medium text-red-400 transition hover:border-red-500/40 hover:bg-red-500/5"
+                >
+                  Cancel Stream
+                </button>
+              )}
+
+              {program && (
+                <WithdrawUnvestedButton
+                  program={program}
+                  publicKey={publicKey}
+                  treePubkey={new PublicKey(treeAddress)}
+                  mint={treeState.mint}
+                  vaultAuthority={treeState.vaultAuthority}
+                  vault={treeState.vault}
+                  cancelledAt={cancelledAtBigint}
+                  isCreator={isCreator}
+                  nowTs={nowTs}
+                  onSuccess={fetchTree}
+                  toast={toast}
+                />
+              )}
+            </div>
+
+            {txStatus.type === "success" && (
+              <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                <p className="text-[12px] font-medium text-emerald-400">Transaction submitted.</p>
+                <p className="mt-2 break-all font-mono text-[11px] text-[#8b92a5]">{txStatus.sig}</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Cancel confirmation dialog */}
@@ -799,6 +937,36 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 /* ================================================================== */
 /*  Sub-components                                                    */
 /* ================================================================== */
+
+function SectionHeader({
+  title,
+  caption,
+}: {
+  title: string;
+  caption: string;
+}) {
+  return (
+    <div>
+      <h2 className="text-[16px] font-semibold text-white">{title}</h2>
+      <p className="mt-1 text-[13px] text-[#8b92a5]">{caption}</p>
+    </div>
+  );
+}
+
+function FieldRow({
+  label,
+  input,
+}: {
+  label: string;
+  input: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-[12px] font-medium text-[#8b92a5]">{label}</label>
+      {input}
+    </div>
+  );
+}
 
 /** Metric card used in the 4-card grid. */
 function MetricCard({
@@ -843,6 +1011,24 @@ function DetailRow({
       >
         {mono ? truncateAddress(value) : value}
       </span>
+    </div>
+  );
+}
+
+function WorkflowStep({
+  step,
+  title,
+  body,
+}: {
+  step: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-4">
+      <p className="text-[10px] uppercase tracking-[0.16em] text-[#7e8fb1]">{step}</p>
+      <p className="mt-2 text-[15px] font-semibold text-white">{title}</p>
+      <p className="mt-2 text-[12px] leading-6 text-[#aabbe0]">{body}</p>
     </div>
   );
 }

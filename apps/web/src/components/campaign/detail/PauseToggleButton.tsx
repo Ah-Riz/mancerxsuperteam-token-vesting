@@ -49,8 +49,9 @@ export function PauseToggleButton({
       if (
         err instanceof Error &&
         /User rejected|Connection rejected/i.test(err.message)
-      )
+      ) {
         return;
+      }
       toast(
         err instanceof Error ? err.message : "Failed to toggle pause",
         "error",
@@ -65,7 +66,7 @@ export function PauseToggleButton({
       <button
         onClick={handleToggle}
         disabled={loading}
-        className="w-full rounded-xl border border-emerald-500/20 py-2.5 text-[13px] font-medium text-emerald-400 transition hover:border-emerald-500/40 hover:bg-emerald-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-xl border border-emerald-500/20 py-2.5 text-[13px] font-medium text-emerald-400 transition hover:border-emerald-500/40 hover:bg-emerald-500/5 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Resuming..." : "Unpause Campaign"}
       </button>
@@ -76,7 +77,7 @@ export function PauseToggleButton({
     <button
       onClick={handleToggle}
       disabled={loading}
-      className="w-full rounded-xl border border-amber-500/20 py-2.5 text-[13px] font-medium text-amber-400 transition hover:border-amber-500/40 hover:bg-amber-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full rounded-xl border border-amber-500/20 py-2.5 text-[13px] font-medium text-amber-400 transition hover:border-amber-500/40 hover:bg-amber-500/5 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {loading ? "Pausing..." : "Pause Campaign"}
     </button>
