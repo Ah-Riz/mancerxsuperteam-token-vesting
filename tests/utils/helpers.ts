@@ -61,9 +61,9 @@ export function expectAnchorError(err: unknown, code: number) {
   const haystack = msg + "\n" + logs;
   const decimal = `Error Number: ${code}`;
   const anchorName = Object.entries({
-    FullyVested: 6030,
-    StreamExpired: 6031,
-    MilestoneNotReleased: 6032,
+    FullyVested: 6031,
+    StreamExpired: 6032,
+    MilestoneNotReleased: 6033,
     NothingToClaim: 6015,
     AlreadyCancelled: 6020,
   }).find(([, v]) => v === code)?.[0];
