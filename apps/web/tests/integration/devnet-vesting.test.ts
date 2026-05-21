@@ -14,6 +14,7 @@ import {
   loadKeypairFromEnv,
   makeProgram,
   pauseStream,
+  setMilestoneReleased,
   tokenBalance,
   uiAmountToRaw,
 } from "./devnet-helpers";
@@ -168,6 +169,7 @@ describeDevnet("devnet vesting flows", () => {
       milestoneIdx: 0,
     });
 
+    await setMilestoneReleased(connection, fixture, 0);
     await claimSingleStream(connection, fixture);
     const claimRecord = await fetchClaimRecord(connection, beneficiary.publicKey, fixture.treePubkey);
     expect(claimRecord.claimedAmount.toString()).toBe(fixture.amountRaw);
@@ -188,6 +190,7 @@ describeDevnet("devnet vesting flows", () => {
       milestoneIdx: 0,
     });
 
+    await setMilestoneReleased(connection, fixture, 0);
     await claimSingleStream(connection, fixture);
 
     try {
@@ -198,7 +201,7 @@ describeDevnet("devnet vesting flows", () => {
     }
   }, TEST_TIMEOUT);
 
-  it("milestone: claim before unlock fails with NothingToClaim", async () => {
+  it("milestone: claim before release fails with MilestoneNotReleased", async () => {
     const now = currentUnix();
     const beneficiary = Keypair.generate();
     const fixture = await createSingleStreamFixture(connection, {
@@ -214,9 +217,9 @@ describeDevnet("devnet vesting flows", () => {
 
     try {
       await claimSingleStream(connection, fixture);
-      throw new Error("Expected milestone pre-unlock claim to fail");
+      throw new Error("Expected milestone pre-release claim to fail");
     } catch (error) {
-      expectErrorCode(error, VESTING_ERROR_CODES.NothingToClaim);
+      expectErrorCode(error, VESTING_ERROR_CODES.MilestoneNotReleased);
     }
   }, TEST_TIMEOUT);
 

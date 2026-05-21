@@ -310,6 +310,21 @@ export async function claimSingleStream(
   return { sig, claimRecord, beneficiaryAta };
 }
 
+export async function setMilestoneReleased(
+  connection: Connection,
+  fixture: SingleStreamFixture,
+  milestoneIdx: number,
+) {
+  const creatorProgram = makeProgram(connection, fixture.creator);
+  return creatorProgram.methods
+    .setMilestoneReleased(milestoneIdx)
+    .accounts({
+      creator: fixture.creator.publicKey,
+      vestingTree: fixture.treePubkey,
+    })
+    .rpc();
+}
+
 export async function cancelStream(
   connection: Connection,
   creator: Keypair,

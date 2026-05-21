@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   canCancelCampaign,
+  canCancelStream,
   canPauseCampaign,
+  canReleaseMilestone,
   canRotateRoot,
   canWithdrawUnvested,
   sameAddress,
@@ -148,6 +150,94 @@ describe("campaign authority helpers", () => {
         cancelAuthority,
         cancellable: true,
         cancelledAt: null,
+        leafCount: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("allows milestone release only for creator on milestone streams", () => {
+    expect(
+      canReleaseMilestone({
+        viewer: creator,
+        creator,
+        cancelledAt: null,
+        releaseType: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      canReleaseMilestone({
+        viewer: recipient,
+        creator,
+        cancelledAt: null,
+        releaseType: 2,
+      }),
+    ).toBe(false);
+
+    expect(
+      canReleaseMilestone({
+        viewer: creator,
+        creator,
+        cancelledAt: null,
+        releaseType: 0,
+      }),
+    ).toBe(false);
+
+    expect(
+      canReleaseMilestone({
+        viewer: creator,
+        creator,
+        cancelledAt: 10n,
+        releaseType: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("allows cancel_stream only for creator on single-leaf cancellable streams", () => {
+    expect(
+      canCancelStream({
+        viewer: creator,
+        creator,
+        cancellable: true,
+        cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
+        leafCount: 1,
+      }),
+    ).toBe(true);
+
+    expect(
+      canCancelStream({
+        viewer: recipient,
+        creator,
+        cancellable: true,
+        cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
+        leafCount: 1,
+      }),
+    ).toBe(false);
+
+    expect(
+      canCancelStream({
+        viewer: creator,
+        creator,
+        cancellable: true,
+        cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
+        leafCount: 3,
+      }),
+    ).toBe(false);
+
+    expect(
+      canCancelStream({
+        viewer: creator,
+        creator,
+        cancellable: true,
+        cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 100n,
         leafCount: 1,
       }),
     ).toBe(false);

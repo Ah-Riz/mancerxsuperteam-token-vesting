@@ -65,3 +65,34 @@ export function canRotateRoot(params: {
     sameAddress(params.viewer, params.cancelAuthority)
   );
 }
+
+export function canReleaseMilestone(params: {
+  viewer: AddressLike;
+  creator: AddressLike;
+  cancelledAt: bigint | null;
+  releaseType: number;
+}): boolean {
+  return (
+    params.releaseType === 2 &&
+    params.cancelledAt === null &&
+    sameAddress(params.viewer, params.creator)
+  );
+}
+
+export function canCancelStream(params: {
+  viewer: AddressLike;
+  creator: AddressLike;
+  cancellable: boolean;
+  cancelledAt: bigint | null;
+  totalSupply: bigint;
+  totalClaimed: bigint;
+  leafCount: number;
+}): boolean {
+  return (
+    params.leafCount === 1 &&
+    params.cancellable &&
+    params.cancelledAt === null &&
+    params.totalClaimed < params.totalSupply &&
+    sameAddress(params.viewer, params.creator)
+  );
+}

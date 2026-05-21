@@ -71,4 +71,53 @@ describe("CancelConfirmDialog", () => {
     renderDialog({ vestedAmount: 0n, totalClaimed: 0n });
     expect(screen.getByText("~10000 tokens")).toBeTruthy();
   });
+
+  it("shows mode toggle when isSingleStream with onConfirmStream", () => {
+    renderDialog({ isSingleStream: true, onConfirmStream: vi.fn() });
+    expect(screen.getByText("Instant Settle")).toBeTruthy();
+    expect(screen.getByText("Grace Period")).toBeTruthy();
+  });
+
+  it("hides mode toggle when not single stream", () => {
+    renderDialog({ isSingleStream: false });
+    expect(screen.queryByText("Instant Settle")).toBeNull();
+  });
+
+  it("calls onConfirmStream in instant mode", () => {
+    const onConfirmStream = vi.fn();
+    renderDialog({ isSingleStream: true, onConfirmStream });
+    const confirmBtn = screen.getByText("Cancel & Settle");
+    fireEvent.click(confirmBtn);
+    expect(onConfirmStream).toHaveBeenCalledOnce();
+  });
+
+  it("disables Instant Settle when scheduleLoaded is false", () => {
+    renderDialog({ isSingleStream: true, onConfirmStream: vi.fn(), scheduleLoaded: false });
+    const instantBtn = screen.getByText("Instant Settle");
+    expect(instantBtn.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/schedule parameters not loaded/i)).toBeTruthy();
+  });
+
+  it("shows beneficiary input when beneficiaryUnknown in instant mode", () => {
+    renderDialog({
+      isSingleStream: true,
+      onConfirmStream: vi.fn(),
+      beneficiaryUnknown: true,
+      manualBeneficiary: "",
+      onManualBeneficiaryChange: vi.fn(),
+    });
+    expect(screen.getByPlaceholderText(/Beneficiary wallet/i)).toBeTruthy();
+  });
+
+  it("disables confirm when beneficiary unknown and input empty", () => {
+    renderDialog({
+      isSingleStream: true,
+      onConfirmStream: vi.fn(),
+      beneficiaryUnknown: true,
+      manualBeneficiary: "",
+      onManualBeneficiaryChange: vi.fn(),
+    });
+    const confirmBtn = screen.getByText("Cancel & Settle");
+    expect(confirmBtn.hasAttribute("disabled")).toBe(true);
+  });
 });
