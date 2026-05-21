@@ -1004,6 +1004,17 @@
         {
           "name": "now",
           "type": "i64"
+        },
+        {
+          "name": "milestone_released_flags",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
         }
       ],
       "returns": "u64"
@@ -1907,6 +1918,11 @@
       "code": 6032,
       "name": "MilestoneNotReleased",
       "msg": "Milestone has not been released by the creator"
+    },
+    {
+      "code": 6033,
+      "name": "MilestoneAlreadyReleased",
+      "msg": "Milestone has already been released"
     }
   ],
   "types": [

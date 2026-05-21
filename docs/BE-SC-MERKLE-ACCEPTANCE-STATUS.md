@@ -2,7 +2,7 @@
 
 **One place to remember:** what BE–SC Merkle delivered, how the bootcamp acceptance list maps to the code, and verification commands.
 
-**Last updated:** 2026-05-18  
+**Last updated:** 2026-05-21
 **Branch / PR:** `dev_lana` → `test` — [PR #30](https://github.com/Ah-Riz/velthoryn/pull/30)  
 **Deployed API:** [velthoryn.vercel.app](https://velthoryn.vercel.app) (redeploy after BE hardening merge)
 
@@ -15,8 +15,8 @@
 | 1 | Merkle parity — TS SDK vs `apps/web` builder | **13/13** (`scripts/test-merkle-parity.ts`) |
 | 2 | DB schema — 4 tables + indexes on Supabase | **Done** |
 | 3 | E2E — prepare → POST → GET proof → verify (3 release types) | **5/5** (`scripts/test-be-merkle-pipeline.ts`) |
-| 4 | Local build + **79/79** SC tests | **Pass** (`pnpm test:localnet`; keypair must match `G6iaig…`) |
-| 4b | Devnet SC (`pnpm test:devnet`) | **79 pass, 1 pending** (T64 RPC; T64 in bankrun) — upgrade slot **463223253** |
+| 4 | Local build + **86/86** SC tests | **Pass** (`pnpm test:localnet`; keypair must match `G6iaig…`) |
+| 4b | Devnet SC (`pnpm test:devnet`) | **86 pass, 1 pending** (T68 setClock) — upgrade slot **463874212** |
 | 5 | Vercel deploy — 8 API routes | **Live** |
 | 6 | Post-deploy E2E (`--url`, `--timeout`) | **Pass** (re-run after Vercel redeploy) |
 
@@ -38,7 +38,7 @@
 ```bash
 pnpm tsx scripts/test-merkle-parity.ts
 pnpm tsx scripts/test-be-merkle-pipeline.ts --url https://velthoryn.vercel.app --timeout 120000
-pnpm test:localnet   # 79/79 SC
+pnpm test:localnet   # 86/86 SC
 ```
 
 More detail: [weekly-report-mancer/week5/Lana.md](../weekly-report-mancer/week5/Lana.md), [TESTING.md](./TESTING.md)
@@ -47,7 +47,7 @@ More detail: [weekly-report-mancer/week5/Lana.md](../weekly-report-mancer/week5/
 
 ## Part 2 — Acceptance criteria (bootcamp checklist)
 
-**SC baseline:** **79/79** pass — [DEVNET_TEST_RESULTS.md](./DEVNET_TEST_RESULTS.md)
+**SC baseline:** **86/86** pass — [DEVNET_TEST_RESULTS.md](./DEVNET_TEST_RESULTS.md)
 
 Velthoryn ≠ tutorial `Stream` PDA. Single-recipient stream = `create_stream` + `withdraw` when `leaf_count == 1`. See [STREAM_MODEL.md](./STREAM_MODEL.md).
 
@@ -56,13 +56,13 @@ Velthoryn ≠ tutorial `Stream` PDA. Single-recipient stream = `create_stream` +
 | # | Criterion | Status | What we have |
 |---|-----------|--------|--------------|
 | 1 | **Cliff:** zero before cliff date; linear after | **Pass** | `schedule.rs`; T6, T17, T18, T41 |
-| 2 | **Milestone:** unlock on **creator boolean flag**, not time | **Pass** | `set_milestone_released` + `milestone_released_flags` on `VestingTree`; claim/withdraw require flag; T10, T11, T46, T63 |
-| 3 | **`cancel_stream`:** creator-only; unlocked → recipient, locked → creator | **Pass** | `cancel_stream` (single leaf); T64 |
+| 2 | **Milestone:** unlock on **creator boolean flag**, not time | **Pass** | `set_milestone_released` + `milestone_released_flags` on `VestingTree`; claim/withdraw require flag; idempotency guard (`MilestoneAlreadyReleased`); T10, T11, T46, T63, T65 |
+| 3 | **`cancel_stream`:** creator-only; unlocked → recipient, locked → creator | **Pass** | `cancel_stream` (single leaf); milestone-aware (released → full, unreleased → 0); OverClaim guard; T64, T64b, T64c, T64d |
 | 4 | Cannot cancel already cancelled | **Pass** | `AlreadyCancelled` (6020); T35 |
 | 5 | Cannot cancel after fully vested | **Pass** | `FullyVested` (6030); T60 |
 | 6 | **Errors:** Unauthorized, AlreadyCancelled, FullyVested, NothingToWithdraw, StreamExpired | **Pass** | All mapped — see below |
-| 7 | **Tests:** cliff times, milestone, cancel paths, errors | **Pass** | T60–T64 + existing matrix |
-| 8 | All Week 4 tests still pass | **Pass** | **79/79** |
+| 7 | **Tests:** cliff times, milestone, cancel paths, errors | **Pass** | T60–T68 + existing matrix |
+| 8 | All Week 4 tests still pass | **Pass** | **86/86** |
 
 **Score for grader (literal checklist):** **8/8 fully met**, **0 partial**, **0 open gaps**.
 
@@ -76,6 +76,7 @@ Velthoryn ≠ tutorial `Stream` PDA. Single-recipient stream = `create_stream` +
 | NothingToWithdraw | `NothingToClaim` | 6015 | `0x177f` |
 | StreamExpired | `StreamExpired` | 6031 | `0x178f` |
 | (milestone) | `MilestoneNotReleased` | 6032 | `0x1790` |
+| (milestone) | `MilestoneAlreadyReleased` | 6033 | `0x1791` |
 
 Source: [`programs/vesting/src/errors.rs`](../programs/vesting/src/errors.rs), [ERROR_MAP.md](./ERROR_MAP.md)
 
@@ -85,7 +86,7 @@ Source: [`programs/vesting/src/errors.rs`](../programs/vesting/src/errors.rs), [
 |----------|---------|---------------|
 | Cliff before / after | T6, T17, T18, T41 | Yes |
 | Milestone creator flag | T10, T11, T46, T63 | Yes |
-| `cancel_stream` one-tx split | T64 | Yes |
+| `cancel_stream` one-tx split | T64, T64b, T64c, T64d | Yes |
 | Cancel wrong user | T34 | Yes |
 | Cancel twice | T35 | Yes |
 | Cancel mid-stream (clamp) | T55 | Yes |
@@ -106,6 +107,10 @@ Source: [`programs/vesting/src/errors.rs`](../programs/vesting/src/errors.rs), [
 | `FullyVested` + `StreamExpired` + T60–T62 | **Done** |
 | Milestone creator flag (`set_milestone_released`) | **Done** |
 | `cancel_stream` instruction | **Done** |
+| Milestone cancel_stream (released/unreleased paths) | **Done** (T64b–T64d) |
+| `get_vested_amount` milestone flag gating | **Done** |
+| `MilestoneAlreadyReleased` idempotency guard | **Done** (T65) |
+| `cancel_stream` OverClaim guard | **Done** |
 
 ---
 

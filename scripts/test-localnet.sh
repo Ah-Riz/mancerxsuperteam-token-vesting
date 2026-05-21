@@ -47,8 +47,8 @@ else
   ANCHOR_TEST_ARGS=(--skip-build)
 fi
 
-PROGRAM_ID="G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu"
 KEYPAIR="${ROOT}/target/deploy/vesting-keypair.json"
+PROGRAM_ID=$(solana-keygen pubkey "$KEYPAIR")
 if [[ ! -f "$KEYPAIR" ]]; then
   echo "ERROR: $KEYPAIR not found — run anchor build first"
   exit 1

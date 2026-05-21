@@ -91,7 +91,8 @@ pub mod vesting {
         leaf: VestingLeaf,
         cancelled_at: Option<i64>,
         now: i64,
+        milestone_released_flags: Option<[u8; 32]>,
     ) -> Result<u64> {
-        instructions::get_vested_amount::handler(ctx, leaf, cancelled_at, now)
+        instructions::get_vested_amount::handler(ctx, leaf, cancelled_at, now, milestone_released_flags)
     }
 }

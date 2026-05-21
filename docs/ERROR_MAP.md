@@ -12,6 +12,7 @@ This table maps common **bootcamp / tutorial** names to the on-chain variants an
 | Cancel after all claimed | `FullyVested` | 6030 | `0x178e` | `total_claimed >= total_supply` on `cancel_campaign` | T60 |
 | Claim/withdraw after schedule ended or fully claimed | `StreamExpired` | 6031 | `0x178f` | `claimable == 0` and (`now >= end` or fully claimed) | T61 |
 | Milestone not released by creator | `MilestoneNotReleased` | 6032 | `0x1790` | `release_type = 2` and flag bit unset on `VestingTree` | T63 |
+| Milestone already released | `MilestoneAlreadyReleased` | 6033 | `0x1791` | `set_milestone_released` called twice for same index | T65 |
 | Milestone double-claim | `MilestoneAlreadyClaimed` | 6014 | `0x177e` | Same `milestone_idx` claimed twice | T10, EXPLOIT 5 |
 | Bad schedule / wrong params | `InvalidProof` | 6013 | `0x177d` | Reconstructed leaf hash ≠ `merkle_root` | T24 (withdraw), EXPLOIT 3 |
 | `StreamNotEnded` | *(not used)* | — | — | `withdraw` has no amount arg; only pays `vested − claimed` | — |
