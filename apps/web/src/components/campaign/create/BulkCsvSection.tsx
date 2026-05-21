@@ -5,13 +5,13 @@ import {
   CARD,
   SECTION,
   INPUT,
-  Field,
   SectionHeader,
   SummaryRow,
   ToggleCard,
   formatIssueLabel,
   formatTokenAmount,
 } from "./shared";
+import { TokenPicker } from "./TokenPicker";
 
 export function BulkCsvSection({
   mintAddress,
@@ -50,38 +50,23 @@ export function BulkCsvSection({
     <div className="space-y-5">
       <div className={`${CARD} space-y-4 p-5`}>
         <SectionHeader title="Campaign Configuration" caption="Shared settings for all recipients in this campaign" />
-        <Field
-          label="Mint Address"
-          input={
-            <input
-              type="text"
-              placeholder="Token mint public key"
-              value={mintAddress}
-              onChange={(e) => onMintAddressChange(e.target.value)}
-              className={`${INPUT} font-mono`}
-            />
-          }
-          hint={
-            mintLoading
-              ? "Fetching mint info..."
-              : mintDecimals !== null
-                ? `Mint detected — ${mintDecimals} decimals`
-                : undefined
-          }
-          hintClassName={mintDecimals !== null ? "!text-emerald-400" : undefined}
+        <TokenPicker
+          mintAddress={mintAddress}
+          onMintAddressChange={onMintAddressChange}
+          mintDecimals={mintDecimals}
+          mintLoading={mintLoading}
+          helperText="Use one shared mint for every row in this campaign."
         />
-        <Field
-          label="Campaign ID"
-          input={
-            <input
-              type="number"
-              min="1"
-              value={campaignId}
-              onChange={(e) => onCampaignIdChange(e.target.value)}
-              className={INPUT}
-            />
-          }
-        />
+        <div>
+          <label className="mb-2 block text-[12px] font-medium text-[#8b92a5]">Campaign ID</label>
+          <input
+            type="number"
+            min="1"
+            value={campaignId}
+            onChange={(e) => onCampaignIdChange(e.target.value)}
+            className={INPUT}
+          />
+        </div>
         <ToggleCard
           checked={cancellable}
           onChange={onCancellableChange}

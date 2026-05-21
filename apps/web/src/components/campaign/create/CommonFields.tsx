@@ -8,6 +8,7 @@ import {
   SectionHeader,
   ToggleCard,
 } from "./shared";
+import { TokenPicker } from "./TokenPicker";
 
 type FormErrors = Record<string, string | null>;
 
@@ -46,26 +47,13 @@ export function CommonFields({
     <div className="space-y-5">
       <div className={`${CARD} space-y-4 p-5`}>
         <SectionHeader title="Token Details" caption={tokenCaption} />
-        <Field
-          label="Mint Address"
-          input={
-            <input
-              type="text"
-              placeholder="Token mint public key"
-              value={mintAddress}
-              onChange={(e) => onMintAddressChange(e.target.value)}
-              className={`${INPUT} font-mono ${formErrors.mintAddress ? INPUT_ERR : ""}`}
-            />
-          }
+        <TokenPicker
+          mintAddress={mintAddress}
+          onMintAddressChange={onMintAddressChange}
+          mintDecimals={mintDecimals}
+          mintLoading={mintLoading}
           error={formErrors.mintAddress}
-          hint={
-            mintLoading
-              ? "Fetching mint info..."
-              : mintDecimals !== null
-                ? `Mint detected — ${mintDecimals} decimals`
-                : undefined
-          }
-          hintClassName={mintDecimals !== null ? "!text-emerald-400" : undefined}
+          helperText="Choose a mint from your wallet or paste one manually."
         />
         <Field
           label={`Amount${mintDecimals !== null ? ` (${mintDecimals} decimals)` : ""}`}

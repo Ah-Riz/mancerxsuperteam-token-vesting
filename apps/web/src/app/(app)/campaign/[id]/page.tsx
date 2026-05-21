@@ -7,6 +7,7 @@ import { BN } from "@coral-xyz/anchor";
 import { useVestingProgram } from "@/hooks/useVestingProgram";
 import { useProofLookup } from "@/hooks/useProofLookup";
 import { useClaimRecord } from "@/hooks/useClaimRecord";
+import { useCampaignDetail } from "@/hooks/useCampaignDetail";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { unixToDatetimeLocal, datetimeLocalToUnix } from "@/lib/stream/datetime";
@@ -16,6 +17,7 @@ import { MilestoneStatusBadge } from "@/components/campaign/detail/MilestoneStat
 import { PauseToggleButton } from "@/components/campaign/detail/PauseToggleButton";
 import { WithdrawUnvestedButton } from "@/components/campaign/detail/WithdrawUnvestedButton";
 import { ClaimWithProofButton } from "@/components/campaign/detail/ClaimWithProofButton";
+import { RootRotationCard } from "@/components/campaign/detail/RootRotationCard";
 import { useToast } from "@/components/shell/Toast";
 import {
   getVestingTypeLabel,
@@ -24,6 +26,12 @@ import {
   getWithdrawDisabledReason,
 } from "@/lib/vesting/display";
 import { isMilestoneTriggered } from "@/lib/vesting/milestone";
+import {
+  canCancelCampaign,
+  canPauseCampaign,
+  canRotateRoot,
+  canWithdrawUnvested,
+} from "@/lib/campaign/authority";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -178,6 +186,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     isSingleLeaf ? treeAddress : undefined,
     isSingleLeaf ? beneficiaryKey : undefined,
   );
+  const campaignDetailQuery = useCampaignDetail(treeAddress);
 
   const claimRecordQuery = useClaimRecord(treeAddress, beneficiaryKey);
 
@@ -375,11 +384,29 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const claimable = vested > totalClaimed ? vested - totalClaimed : 0n;
   const progress = progressPercent(vested, totalSupply);
 
-  const isCreator = publicKey && treeState ? publicKey.equals(treeState.creator) : false;
-  const isCancelAuthority =
-    publicKey && treeState?.cancelAuthority ? publicKey.equals(treeState.cancelAuthority) : false;
-  const isPauseAuthority =
-    publicKey && treeState?.pauseAuthority ? publicKey.equals(treeState.pauseAuthority) : false;
+  const canShowPauseToggle = canPauseCampaign({
+    viewer: publicKey,
+    pauseAuthority: treeState?.pauseAuthority,
+    cancelledAt: cancelledAtBigint,
+  });
+  const canShowCancel = canCancelCampaign({
+    viewer: publicKey,
+    cancelAuthority: treeState?.cancelAuthority,
+    cancellable: treeState?.cancellable ?? false,
+    cancelledAt: cancelledAtBigint,
+  });
+  const canShowWithdrawUnvested = canWithdrawUnvested({
+    viewer: publicKey,
+    creator: treeState?.creator,
+    cancelledAt: cancelledAtBigint,
+  });
+  const canShowRootRotation = canRotateRoot({
+    viewer: publicKey,
+    cancelAuthority: treeState?.cancelAuthority,
+    cancellable: treeState?.cancellable ?? false,
+    cancelledAt: cancelledAtBigint,
+    leafCount: treeState?.leafCount ?? 0,
+  });
   const isCliff = releaseType === 0;
   const isLinear = releaseType === 1;
   const isMilestone = releaseType === 2;
@@ -427,6 +454,18 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const claimActionLabel = beneficiaryMismatch && expectedBeneficiary
     ? `Only ${truncateAddress(expectedBeneficiary)} can claim`
     : withdrawDisabledReason ?? `Claim ${formatTokenAmount(claimable)}`;
+  const currentMerkleRootHex = treeState ? Buffer.from(treeState.merkleRoot).toString("hex") : "";
+  const rootVersions = campaignDetailQuery.data?.rootVersions ?? [];
+  const scheduleSectionTitle = isSingleLeaf
+    ? scheduleLocked
+      ? "Claim Parameters"
+      : "Manual Claim Parameters"
+    : "Schedule Reference";
+  const scheduleSectionCaption = isSingleLeaf
+    ? scheduleLocked
+      ? "Loaded from indexed or local schedule data. Switch to manual parameters only if you need to reconstruct a single-stream claim. This does not update the campaign on-chain."
+      : "These manual parameters only affect local claim preview and single-stream withdraw submission. They do not update the campaign on-chain."
+    : "Reference parameters for the campaign schedule. Proof-backed claims still use indexed leaf data rather than edits in this panel.";
 
   /* ---- Status helpers ---- */
 
@@ -462,6 +501,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       setCancelOpen(false);
       toast("Stream cancelled successfully.", "success");
       fetchTree();
+      void campaignDetailQuery.refetch();
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -532,6 +572,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       setTxStatus({ type: "success", sig });
       toast(`Claimed ${formatTokenAmount(claimable)} tokens successfully!`, "success");
       fetchTree();
+      void campaignDetailQuery.refetch();
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -545,17 +586,6 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       toast(msg, "error");
     }
   }
-
-  /* ---- Schedule source hint ---- */
-
-  const scheduleHint =
-    scheduleSource === "api"
-      ? "Schedule loaded from indexer."
-      : scheduleSource === "local"
-        ? "Schedule loaded from this browser (saved at create time)."
-        : isSingleLeaf
-          ? "Schedule not found. Ask the stream creator for the share link, or enter the exact parameters manually."
-          : "Enter your vesting parameters to compute claimable amount.";
 
   /* ================================================================ */
   /*  RENDER                                                          */
@@ -727,8 +757,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
             <div className="flex items-start justify-between gap-4">
               <SectionHeader
-                title="Schedule"
-                caption={scheduleHint}
+                title={scheduleSectionTitle}
+                caption={scheduleSectionCaption}
               />
               {isSingleLeaf && scheduleLocked && (
                 <button
@@ -736,13 +766,20 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   onClick={() => setShowManualSchedule(true)}
                   className="text-[12px] font-medium text-white underline underline-offset-4"
                 >
-                  Edit
+                  Use Manual Parameters
                 </button>
               )}
             </div>
 
             {proofQuery.isLoading && isSingleLeaf && (
               <p className="mt-4 text-[12px] text-[#8b92a5]">Loading schedule...</p>
+            )}
+
+            {((isSingleLeaf && !scheduleLocked) || !isSingleLeaf) && (
+              <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] leading-6 text-amber-200">
+                Editing these values does not mutate the campaign on-chain. They are only used for local claim
+                preview and, for single-stream claims, to reconstruct the withdraw parameters.
+              </div>
             )}
 
             <div className="mt-5 space-y-4">
@@ -877,14 +914,14 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   publicKey={publicKey}
                   treePubkey={new PublicKey(treeAddress)}
                   paused={treeState.paused}
-                  isPauseAuthority={isPauseAuthority}
+                  isPauseAuthority={canShowPauseToggle}
                   cancelledAt={cancelledAtBigint}
                   onSuccess={fetchTree}
                   toast={toast}
                 />
               )}
 
-              {treeState.cancellable && (isCreator || isCancelAuthority) && !treeState.cancelledAt && (
+              {canShowCancel && (
                 <button
                   onClick={() => setCancelOpen(true)}
                   className="w-full rounded-xl border border-red-500/20 px-4 py-3 text-[13px] font-medium text-red-400 transition hover:border-red-500/40 hover:bg-red-500/5"
@@ -902,9 +939,24 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   vaultAuthority={treeState.vaultAuthority}
                   vault={treeState.vault}
                   cancelledAt={cancelledAtBigint}
-                  isCreator={isCreator}
+                  isCreator={canShowWithdrawUnvested}
                   nowTs={nowTs}
                   onSuccess={fetchTree}
+                  toast={toast}
+                />
+              )}
+
+              {program && (
+                <RootRotationCard
+                  treeAddress={treeAddress}
+                  canRotate={canShowRootRotation}
+                  currentMerkleRoot={currentMerkleRootHex}
+                  currentLeafCount={treeState.leafCount}
+                  rootVersions={rootVersions}
+                  onSuccess={() => {
+                    fetchTree();
+                    void campaignDetailQuery.refetch();
+                  }}
                   toast={toast}
                 />
               )}
