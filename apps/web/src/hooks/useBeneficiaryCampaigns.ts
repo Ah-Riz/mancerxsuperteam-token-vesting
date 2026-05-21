@@ -42,6 +42,6 @@ export function useBeneficiaryCampaigns(address: string | undefined) {
       return res.json();
     },
     enabled: !!address,
-    staleTime: 10_000,
+    staleTime: 5_000,
   });
 }

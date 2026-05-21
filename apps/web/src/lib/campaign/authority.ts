@@ -17,8 +17,14 @@ export function canPauseCampaign(params: {
   viewer: AddressLike;
   pauseAuthority: AddressLike;
   cancelledAt: bigint | null;
+  totalSupply: bigint;
+  totalClaimed: bigint;
 }): boolean {
-  return params.cancelledAt === null && sameAddress(params.viewer, params.pauseAuthority);
+  return (
+    params.cancelledAt === null &&
+    params.totalClaimed < params.totalSupply &&
+    sameAddress(params.viewer, params.pauseAuthority)
+  );
 }
 
 export function canCancelCampaign(params: {
@@ -26,10 +32,13 @@ export function canCancelCampaign(params: {
   cancelAuthority: AddressLike;
   cancellable: boolean;
   cancelledAt: bigint | null;
+  totalSupply: bigint;
+  totalClaimed: bigint;
 }): boolean {
   return (
     params.cancellable &&
     params.cancelledAt === null &&
+    params.totalClaimed < params.totalSupply &&
     sameAddress(params.viewer, params.cancelAuthority)
   );
 }

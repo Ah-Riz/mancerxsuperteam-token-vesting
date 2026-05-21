@@ -29,10 +29,11 @@ export const VESTING_ERROR_CODES = {
   AlreadyPaused: 6022,
   CampaignCancelled: 6023,
   NotPaused: 6024,
-  NotCancelled: 6025,
-  GracePeriodActive: 6026,
-  CannotClose: 6027,
-  NotSingleStream: 6028,
+  CampaignCompleted: 6025,
+  NotCancelled: 6026,
+  GracePeriodActive: 6027,
+  CannotClose: 6028,
+  NotSingleStream: 6029,
 } as const;
 
 type ErrorKey = keyof typeof VESTING_ERROR_CODES;
@@ -64,6 +65,7 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
   AlreadyPaused: "Stream is already paused.",
   CampaignCancelled: "Stream is cancelled; this action is blocked.",
   NotPaused: "Stream is not paused.",
+  CampaignCompleted: "Stream is already fully claimed; this action is blocked.",
   NotCancelled: "Stream must be cancelled first.",
   GracePeriodActive: "Grace period is still active; unvested sweep not allowed yet.",
   CannotClose: "Claim record cannot be closed yet.",

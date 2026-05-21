@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
+import React from "react";
 
 const { mockUseConnection, mockUseWallet } = vi.hoisted(() => ({
   mockUseConnection: vi.fn(),
@@ -12,7 +13,11 @@ vi.mock("@solana/wallet-adapter-react", () => ({
   useWallet: mockUseWallet,
 }));
 
-import { useWalletTokens } from "@/hooks/useWalletTokens";
+vi.mock("@solana/spl-token", () => ({
+  TOKEN_PROGRAM_ID: { toBase58: () => "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+}));
+
+import { WalletTokensProvider, useWalletTokens } from "@/components/providers/WalletTokensProvider";
 
 const WALLET_PUBLIC_KEY = {
   toBase58: () => "Wallet1111111111111111111111111111111111111",
@@ -40,6 +45,11 @@ function parsedTokenAccount(mint: string, amount: string, decimals = 6) {
   };
 }
 
+function createWrapper() {
+  return ({ children }: { children: React.ReactNode }) =>
+    React.createElement(WalletTokensProvider, null, children);
+}
+
 describe("useWalletTokens", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,7 +70,9 @@ describe("useWalletTokens", () => {
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });
 
-    const { result } = renderHook(() => useWalletTokens());
+    const { result } = renderHook(() => useWalletTokens(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -96,7 +108,9 @@ describe("useWalletTokens", () => {
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });
 
-    const { result } = renderHook(() => useWalletTokens());
+    const { result } = renderHook(() => useWalletTokens(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -112,7 +126,9 @@ describe("useWalletTokens", () => {
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });
 
-    const { result } = renderHook(() => useWalletTokens());
+    const { result } = renderHook(() => useWalletTokens(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 

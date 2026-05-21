@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, use, useMemo } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PublicKey } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useVestingProgram } from "@/hooks/useVestingProgram";
@@ -56,7 +57,7 @@ type TreeState = {
   bump: number;
 };
 
-type ScheduleSource = "none" | "api" | "local" | "manual";
+type ScheduleSource = "none" | "api" | "local" | "url" | "manual";
 type MilestoneUiMeta = {
   name: string | null;
   owner: string | null;
@@ -151,6 +152,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const { connection } = useConnection();
   const program = useVestingProgram();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [treeState, setTreeState] = useState<TreeState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,9 +184,23 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
   const isSingleLeaf = treeState?.leafCount === 1;
   const beneficiaryKey = publicKey?.toBase58();
+  const localSchedule = useMemo(
+    () => loadStreamScheduleLocal(treeAddress),
+    [treeAddress],
+  );
+  const proofBeneficiary = useMemo(() => {
+    if (!isSingleLeaf || !beneficiaryKey) return undefined;
+    if (
+      localSchedule?.beneficiary &&
+      localSchedule.beneficiary !== beneficiaryKey
+    ) {
+      return undefined;
+    }
+    return beneficiaryKey;
+  }, [beneficiaryKey, isSingleLeaf, localSchedule]);
   const proofQuery = useProofLookup(
     isSingleLeaf ? treeAddress : undefined,
-    isSingleLeaf ? beneficiaryKey : undefined,
+    proofBeneficiary,
   );
   const campaignDetailQuery = useCampaignDetail(treeAddress);
 
@@ -192,7 +208,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
   const scheduleLocked =
     isSingleLeaf &&
-    (scheduleSource === "api" || scheduleSource === "local") &&
+    (scheduleSource === "api" || scheduleSource === "local" || scheduleSource === "url") &&
     !showManualSchedule;
 
   /* ---- Fetch on-chain tree state ---- */
@@ -222,12 +238,15 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         bump: account.bump,
       });
       setError(null);
+      // Invalidate campaign list caches so My Campaigns page shows updated status
+      void queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      void queryClient.invalidateQueries({ queryKey: ["beneficiaryCampaigns"] });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to fetch campaign");
     } finally {
       setLoading(false);
     }
-  }, [program, treeAddress]);
+  }, [program, treeAddress, queryClient]);
 
   useEffect(() => {
     fetchTree();
@@ -309,16 +328,18 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       return;
     }
 
-    if (proofQuery.isError && scheduleSource !== "api") {
-      const local = loadStreamScheduleLocal(treeAddress);
-      if (local) {
+    if (
+      scheduleSource !== "api" &&
+      (proofQuery.isError || proofBeneficiary === undefined)
+    ) {
+      if (localSchedule) {
         applyScheduleToForm(
           {
-            releaseType: local.releaseType,
-            startTime: local.startTime,
-            cliffTime: local.cliffTime,
-            endTime: local.endTime,
-            milestoneIdx: local.milestoneIdx,
+            releaseType: localSchedule.releaseType,
+            startTime: localSchedule.startTime,
+            cliffTime: localSchedule.cliffTime,
+            endTime: localSchedule.endTime,
+            milestoneIdx: localSchedule.milestoneIdx,
           },
           {
             setReleaseType,
@@ -328,12 +349,12 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             setMilestoneIdx,
           },
         );
-        setExpectedBeneficiary(local.beneficiary ?? null);
+        setExpectedBeneficiary(localSchedule.beneficiary ?? null);
         setMilestoneUi({
-          name: local.milestoneName ?? null,
-          owner: local.milestoneOwner ?? null,
-          mode: local.milestoneMode ?? null,
-          evidence: local.milestoneEvidence ?? null,
+          name: localSchedule.milestoneName ?? null,
+          owner: localSchedule.milestoneOwner ?? null,
+          mode: localSchedule.milestoneMode ?? null,
+          evidence: localSchedule.milestoneEvidence ?? null,
         });
         setScheduleSource("local");
       } else {
@@ -341,7 +362,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         if (urlSchedule.loaded) {
           setExpectedBeneficiary(urlSchedule.beneficiary);
           setMilestoneUi(urlSchedule.milestoneUi);
-          setScheduleSource("local");
+          setScheduleSource("url");
         } else if (scheduleSource === "none") {
           setScheduleSource("manual");
         }
@@ -352,8 +373,10 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     publicKey,
     proofQuery.data,
     proofQuery.isError,
+    proofBeneficiary,
     treeAddress,
     scheduleSource,
+    localSchedule,
   ]);
 
   /* ---- Derived values ---- */
@@ -388,12 +411,16 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     viewer: publicKey,
     pauseAuthority: treeState?.pauseAuthority,
     cancelledAt: cancelledAtBigint,
+    totalSupply,
+    totalClaimed,
   });
   const canShowCancel = canCancelCampaign({
     viewer: publicKey,
     cancelAuthority: treeState?.cancelAuthority,
     cancellable: treeState?.cancellable ?? false,
     cancelledAt: cancelledAtBigint,
+    totalSupply,
+    totalClaimed,
   });
   const canShowWithdrawUnvested = canWithdrawUnvested({
     viewer: publicKey,
@@ -502,6 +529,22 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       toast("Stream cancelled successfully.", "success");
       fetchTree();
       void campaignDetailQuery.refetch();
+
+      const cancelTs = Math.floor(Date.now() / 1000);
+      queryClient.setQueriesData(
+        { queryKey: ["campaigns"] },
+        (old: unknown) => {
+          const data = old as { campaigns?: { treeAddress: string; cancelledAt: number | null }[] } | undefined;
+          if (!data?.campaigns) return old;
+          return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, cancelledAt: cancelTs } : c) };
+        },
+      );
+
+      fetch(`/api/campaigns/${treeAddress}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancelledAt: cancelTs }),
+      }).catch(() => {});
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -573,6 +616,44 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       toast(`Claimed ${formatTokenAmount(claimable)} tokens successfully!`, "success");
       fetchTree();
       void campaignDetailQuery.refetch();
+      void fetch("/api/claims/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature: sig }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const body = await res.text();
+            console.warn("[claim sync] Failed:", res.status, body);
+            return;
+          }
+          await Promise.all([
+            campaignDetailQuery.refetch(),
+            queryClient.invalidateQueries({ queryKey: ["campaigns"] }),
+            queryClient.invalidateQueries({ queryKey: ["beneficiaryCampaigns"] }),
+          ]);
+        })
+        .catch((syncError) => {
+          console.warn("[claim sync] Error:", syncError);
+        });
+
+      const newClaimed = (totalClaimed + claimable).toString();
+      queryClient.setQueriesData(
+        { queryKey: ["campaigns"] },
+        (old: unknown) => {
+          const data = old as { campaigns?: { treeAddress: string; totalClaimed: number | string }[] } | undefined;
+          if (!data?.campaigns) return old;
+          return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, totalClaimed: newClaimed } : c) };
+        },
+      );
+      queryClient.setQueriesData(
+        { queryKey: ["beneficiaryCampaigns"] },
+        (old: unknown) => {
+          const data = old as { campaigns?: { treeAddress: string; myClaimed: number | string }[] } | undefined;
+          if (!data?.campaigns) return old;
+          return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, myClaimed: newClaimed } : c) };
+        },
+      );
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -865,13 +946,19 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               caption="Claim and manage this stream."
             />
 
+            {scheduleSource === "url" && (
+              <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] leading-6 text-amber-300">
+                <strong>Unverified:</strong> Schedule parameters were loaded from the URL. Values shown (including claimable amount) may not reflect actual on-chain state.
+              </div>
+            )}
+
             {isSingleLeaf && beneficiaryMismatch && expectedBeneficiary && (
               <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] leading-6 text-amber-300">
                 Connected wallet does not match the beneficiary.
               </div>
             )}
 
-            {isSingleLeaf && !expectedBeneficiary && scheduleSource !== "api" && (
+            {isSingleLeaf && !expectedBeneficiary && scheduleSource !== "api" && scheduleSource !== "url" && (
               <div className="mt-5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-[12px] leading-6 text-[#8b92a5]">
                 Beneficiary could not be verified from indexed data.
               </div>
@@ -916,7 +1003,23 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   paused={treeState.paused}
                   isPauseAuthority={canShowPauseToggle}
                   cancelledAt={cancelledAtBigint}
-                  onSuccess={fetchTree}
+                  onSuccess={() => {
+                    const newPaused = !treeState.paused;
+                    fetchTree();
+                    queryClient.setQueriesData(
+                      { queryKey: ["campaigns"] },
+                      (old: unknown) => {
+                        const data = old as { campaigns?: { treeAddress: string; paused: boolean }[] } | undefined;
+                        if (!data?.campaigns) return old;
+                        return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, paused: newPaused } : c) };
+                      },
+                    );
+                    fetch(`/api/campaigns/${treeAddress}/status`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ paused: newPaused }),
+                    }).catch(() => {});
+                  }}
                   toast={toast}
                 />
               )}

@@ -24,6 +24,10 @@ pub struct PauseCampaign<'info> {
 pub type UnpauseCampaign<'info> = PauseCampaign<'info>;
 
 pub fn pause_handler(ctx: Context<PauseCampaign>) -> Result<()> {
+    require!(
+        ctx.accounts.vesting_tree.total_claimed < ctx.accounts.vesting_tree.total_supply,
+        VestingError::CampaignCompleted
+    );
     require!(!ctx.accounts.vesting_tree.paused, VestingError::AlreadyPaused);
     ctx.accounts.vesting_tree.paused = true;
     emit!(CampaignPaused {
@@ -33,6 +37,10 @@ pub fn pause_handler(ctx: Context<PauseCampaign>) -> Result<()> {
 }
 
 pub fn unpause_handler(ctx: Context<PauseCampaign>) -> Result<()> {
+    require!(
+        ctx.accounts.vesting_tree.total_claimed < ctx.accounts.vesting_tree.total_supply,
+        VestingError::CampaignCompleted
+    );
     require!(ctx.accounts.vesting_tree.paused, VestingError::NotPaused);
     ctx.accounts.vesting_tree.paused = false;
     emit!(CampaignUnpaused {

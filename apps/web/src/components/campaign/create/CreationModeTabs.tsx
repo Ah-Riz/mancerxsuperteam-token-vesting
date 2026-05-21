@@ -31,7 +31,7 @@ export function CreationModeTabs({
               : "border-white/[0.06] bg-white/[0.02] text-[#8b92a5] hover:border-white/[0.12]"
           }`}
         >
-          {option === "single" ? "Single Stream" : "Bulk Campaign"}
+          {option === "single" ? "Manual" : "Use CSV"}
         </button>
       ))}
     </div>

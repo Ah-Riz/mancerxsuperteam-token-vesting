@@ -3,24 +3,19 @@
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { datetimeLocalToUnix } from "@/lib/stream/datetime";
-import {
-  validateCreateStreamForm,
-  hasErrors,
-  type FormErrors,
-} from "@/lib/validation/stream-form";
+import { validateCreateStreamForm, validatePublicKey, hasErrors, type FormErrors } from "@/lib/validation/stream-form";
 import { bulkCsvTemplate, parseBulkCsv, prepareBulkCampaign, type BulkCsvParseResult, type PreparedBulkCampaign } from "@/lib/campaign/bulk";
 import { useCreateCampaign } from "@/hooks/useCreateCampaign";
 import { useCreateStream, type CreateStreamResult } from "@/hooks/useCreateStream";
-import { useMintInfo } from "@/hooks/useMintInfo";
+import { useWalletTokens } from "@/hooks/useWalletTokens";
 import { useToast } from "@/components/shell/Toast";
-import { ErrorCard, TxResultCard } from "@/components/campaign/create/shared";
+import { CARD, INPUT, INPUT_ERR, LABEL, SECTION, SectionHeader, Field, ToggleCard, TxResultCard, ErrorCard } from "@/components/campaign/create/shared";
 import { BulkCsvSection } from "@/components/campaign/create/BulkCsvSection";
-import { CommonFields } from "@/components/campaign/create/CommonFields";
 import { CreationModeTabs } from "@/components/campaign/create/CreationModeTabs";
 import { FormSummary } from "@/components/campaign/create/FormSummary";
 import { PageHeader } from "@/components/campaign/create/PageHeader";
-import { ScheduleLinear } from "@/components/campaign/create/ScheduleLinear";
-import { SubmitSection } from "@/components/campaign/create/SubmitSection";
+import { TokenPickerButton } from "@/components/campaign/create/TokenPickerButton";
+import { POPULAR_TOKENS } from "@/lib/constants/popular-tokens";
 
 type Mode = "single" | "bulk";
 type TxState =
@@ -36,15 +31,15 @@ export default function LinearCreatePage() {
   const { publicKey } = useWallet();
   const { createStream, formatVestingError: formatStreamError } = useCreateStream();
   const { createCampaign, fundCampaign, formatVestingError: formatCampaignError } = useCreateCampaign();
+  const { tokens: walletTokens } = useWalletTokens();
   const { toast } = useToast();
 
   const [mode, setMode] = useState<Mode>("single");
-
-  const [beneficiary, setBeneficiary] = useState("");
+  const [beneficiaries, setBeneficiaries] = useState<string[]>([""]);
   const [mintAddress, setMintAddress] = useState("");
+  const [mintDecimals, setMintDecimals] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
-  const { mintDecimals, mintLoading } = useMintInfo(mintAddress);
-  const [campaignId, setCampaignId] = useState(() => String(Math.floor(Date.now() / 1000) % 1000000));
+  const [campaignId] = useState(() => String(Math.floor(Date.now() / 1000) % 1000000));
   const [startTime, setStartTime] = useState("");
   const [cliffTime, setCliffTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -52,54 +47,63 @@ export default function LinearCreatePage() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [txState, setTxState] = useState<TxState>({ type: "idle" });
 
+  // Bulk state
   const [csvText, setCsvText] = useState("");
   const [csvResult, setCsvResult] = useState<BulkCsvParseResult | null>(null);
   const [bulkMint, setBulkMint] = useState("");
-  const { mintDecimals: bulkDecimals, mintLoading: bulkMintLoading } = useMintInfo(bulkMint);
-  const [bulkCampaignId, setBulkCampaignId] = useState(() => String(Math.floor(Date.now() / 1000) % 1000000));
+  const [bulkDecimals, setBulkDecimals] = useState<number | null>(null);
+  const [bulkCampaignId] = useState(() => String(Math.floor(Date.now() / 1000) % 1000000));
   const [bulkCancellable, setBulkCancellable] = useState(false);
 
-  async function handleSingleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!publicKey) return;
+  // Derived
+  const tokenInfo = POPULAR_TOKENS.find((t) => t.mint === mintAddress);
+  const tokenSymbol = tokenInfo?.symbol ?? (mintAddress ? mintAddress.slice(0, 4) : "");
+  const walletToken = walletTokens.find((t) => t.mintAddress === mintAddress);
+  const tokenBalance = walletToken?.uiAmount ?? null;
 
+  function handleTokenSelect(mint: string, decimals: number) {
+    setMintAddress(mint);
+    setMintDecimals(decimals);
+  }
+
+  function handleMaxAmount() {
+    if (walletToken) setAmount(walletToken.uiAmount);
+  }
+
+  async function handleSingleSubmit() {
+    if (!publicKey) return;
     const startUnix = startTime ? datetimeLocalToUnix(startTime) : Number.NaN;
-    const cliffUnix = cliffTime ? datetimeLocalToUnix(cliffTime) : Number.NaN;
+    const cliffUnix = cliffTime ? datetimeLocalToUnix(cliffTime) : startUnix;
     const endUnix = endTime ? datetimeLocalToUnix(endTime) : Number.NaN;
 
     const errors = validateCreateStreamForm({
-      beneficiary,
-      mintAddress,
-      amount,
-      mintDecimals,
-      campaignId,
-      startUnix,
-      cliffUnix,
-      endUnix,
-      releaseType: 1,
-      milestoneIdx: "0",
+      beneficiary: beneficiaries[0], mintAddress, amount, mintDecimals, campaignId,
+      startUnix, cliffUnix, endUnix, releaseType: 1, milestoneIdx: "0",
     });
+
+    const validBeneficiaries = beneficiaries.filter((b) => b.trim());
+    if (validBeneficiaries.length === 0) { errors.beneficiary = "At least one recipient required."; }
+    for (let i = 0; i < validBeneficiaries.length; i++) {
+      const addrErr = validatePublicKey(validBeneficiaries[i]);
+      if (addrErr) { errors[`beneficiary_${i}`] = addrErr; }
+    }
+
     setFormErrors(errors);
     if (hasErrors(errors)) return;
 
-    setTxState({ type: "loading", label: "Creating stream..." });
+    setTxState({ type: "loading", label: `Creating ${validBeneficiaries.length} linear stream(s)...` });
     try {
-      const result = await createStream({
-        beneficiary,
-        mintAddress,
-        amount,
-        mintDecimals,
-        campaignId,
-        releaseType: 1,
-        startTime: startUnix,
-        cliffTime: cliffUnix,
-        endTime: endUnix,
-        milestoneIdx: 0,
-        cancellable,
-      });
-      toast("Linear stream created!", "success");
-      if (result.indexWarning) toast(result.indexWarning, "info");
-      setTxState({ type: "success", result });
+      let lastResult: CreateStreamResult | null = null;
+      for (let i = 0; i < validBeneficiaries.length; i++) {
+        const cid = validBeneficiaries.length === 1 ? campaignId : String(Number(campaignId) * 100 + i);
+        lastResult = await createStream({
+          beneficiary: validBeneficiaries[i], mintAddress, amount, mintDecimals, campaignId: cid,
+          releaseType: 1, startTime: startUnix, cliffTime: cliffUnix, endTime: endUnix, milestoneIdx: 0, cancellable,
+        });
+      }
+      toast(`${validBeneficiaries.length} linear stream(s) created!`, "success");
+      if (lastResult?.indexWarning) toast(lastResult.indexWarning, "info");
+      setTxState({ type: "success", result: lastResult! });
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
         toast("Transaction rejected by wallet", "error");
@@ -123,24 +127,12 @@ export default function LinearCreatePage() {
 
   async function handleBulkCreate() {
     if (txState.type !== "bulk-ready") return;
-
     setTxState({ type: "loading", label: "Creating campaign..." });
     try {
-      const result = await createCampaign({
-        mintAddress: bulkMint,
-        campaignId: bulkCampaignId,
-        prepared: txState.prepared,
-        cancellable: bulkCancellable,
-      });
+      const result = await createCampaign({ mintAddress: bulkMint, campaignId: bulkCampaignId, prepared: txState.prepared, cancellable: bulkCancellable });
       toast("Campaign created! Now fund the vault.", "success");
       if (result.indexWarning) toast(result.indexWarning, "info");
-      setTxState({
-        type: "bulk-created",
-        sig: result.sig,
-        treeAddress: result.treeAddress,
-        totalSupply: result.totalSupply,
-        prepared: txState.prepared,
-      });
+      setTxState({ type: "bulk-created", sig: result.sig, treeAddress: result.treeAddress, totalSupply: result.totalSupply, prepared: txState.prepared });
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
         toast("Transaction rejected", "error");
@@ -154,21 +146,11 @@ export default function LinearCreatePage() {
   async function handleBulkFund() {
     if (txState.type !== "bulk-created") return;
     const currentState = txState;
-
     setTxState({ type: "loading", label: "Funding vault..." });
     try {
-      const result = await fundCampaign({
-        mintAddress: bulkMint,
-        treeAddress: currentState.treeAddress,
-        totalSupply: currentState.totalSupply,
-      });
+      const result = await fundCampaign({ mintAddress: bulkMint, treeAddress: currentState.treeAddress, totalSupply: currentState.totalSupply });
       toast("Campaign funded!", "success");
-      setTxState({
-        type: "bulk-funded",
-        sig: result.sig,
-        treeAddress: result.treeAddress,
-        prepared: currentState.prepared,
-      });
+      setTxState({ type: "bulk-funded", sig: result.sig, treeAddress: result.treeAddress, prepared: currentState.prepared });
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
         toast("Transaction rejected", "error");
@@ -179,181 +161,196 @@ export default function LinearCreatePage() {
     }
   }
 
-  const prepared =
-    txState.type === "bulk-ready" || txState.type === "bulk-created" || txState.type === "bulk-funded"
-      ? txState.prepared
-      : null;
+  const prepared = txState.type === "bulk-ready" || txState.type === "bulk-created" || txState.type === "bulk-funded" ? txState.prepared : null;
 
   if (!publicKey) {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
-        <PageHeader
-          title="Linear Vesting"
-          description="Tokens release gradually from cliff date to end date. Smooth, proportional unlock."
-        />
-        <div className="rounded-2xl border border-white/[0.08] bg-[#0d1117] p-5">
+        <PageHeader title="Linear Vesting" description="Tokens release gradually from cliff date to end date. Smooth, proportional unlock." />
+        <div className={`${CARD} p-5`}>
           <p className="text-[13px] text-[#8b92a5]">Connect your wallet to create a linear vesting stream.</p>
         </div>
       </div>
     );
   }
 
-  const singleSummaryRows = [
-    { label: "Type", value: "Linear" },
-    { label: "Mode", value: "Single" },
-    { label: "Recipient", value: beneficiary || "—", mono: !!beneficiary },
-    { label: "Amount", value: amount || "—" },
-    { label: "Cliff", value: cliffTime || "—" },
-    { label: "End", value: endTime || "—" },
-  ];
-
-  const bulkSummaryRows = [
-    { label: "Type", value: "Linear Campaign" },
-    { label: "Mode", value: "Bulk" },
-    { label: "Campaign ID", value: bulkCampaignId || "—" },
-    { label: "Recipients", value: prepared ? String(prepared.leafCount) : "—" },
-    { label: "Total Supply", value: prepared ? prepared.totalSupply : "—" },
-  ];
-
-  const bulkButtonLabel =
-    txState.type === "bulk-created" ? "Step 2: Fund Vault" : "Step 1: Create Campaign";
-
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-12">
-      <PageHeader
-        title="Linear Vesting"
-        description="Tokens release gradually from cliff date to end date. Smooth, proportional unlock."
-      />
+      <PageHeader title="Linear Vesting" description="Tokens release gradually from cliff date to end date. Smooth, proportional unlock." />
 
-      <CreationModeTabs
-        mode={mode}
-        onChange={(nextMode) => {
-          setMode(nextMode);
-          setTxState({ type: "idle" });
-        }}
-        tone="purple"
-      />
+      <CreationModeTabs mode={mode} onChange={(m) => { setMode(m); setTxState({ type: "idle" }); }} tone="purple" />
 
       {mode === "single" ? (
-        <form onSubmit={handleSingleSubmit} className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-            <div className="space-y-5">
-              <CommonFields
-                mintAddress={mintAddress}
-                onMintAddressChange={setMintAddress}
-                amount={amount}
-                onAmountChange={setAmount}
-                beneficiary={beneficiary}
-                onBeneficiaryChange={setBeneficiary}
-                campaignId={campaignId}
-                onCampaignIdChange={setCampaignId}
-                cancellable={cancellable}
-                onCancellableChange={setCancellable}
-                mintDecimals={mintDecimals}
-                mintLoading={mintLoading}
-                formErrors={formErrors}
-                tokenCaption="Token mint and amount for this linear stream"
-              />
-              <ScheduleLinear
-                startTime={startTime}
-                onStartTimeChange={setStartTime}
-                cliffTime={cliffTime}
-                onCliffTimeChange={setCliffTime}
-                endTime={endTime}
-                onEndTimeChange={setEndTime}
-                scheduleError={formErrors.schedule}
-              />
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-5">
+            {/* Token & Amount Card */}
+            <div className={`${CARD} space-y-4 p-5`}>
+              <SectionHeader title="Token & Amount" caption="Select the token and amount to lock" />
+              <div>
+                <label className={LABEL}>Token</label>
+                <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} error={formErrors.mintAddress} />
+              </div>
+              {mintAddress && (
+                <Field
+                  label={`Amount${mintDecimals !== null ? ` (${mintDecimals} decimals)` : ""}`}
+                  input={
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="e.g. 1000"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className={`${INPUT} pr-16 ${formErrors.amount ? INPUT_ERR : ""}`}
+                      />
+                      <button type="button" onClick={handleMaxAmount} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-white/[0.06] px-2 py-1 text-[10px] font-medium text-[#8b92a5] hover:text-white">
+                        Max
+                      </button>
+                    </div>
+                  }
+                  error={formErrors.amount}
+                />
+              )}
             </div>
 
-            <FormSummary
-              title="Form Summary"
-              caption="Review the full unlock curve before sending the transaction."
-              rows={singleSummaryRows}
-              notice="Linear streams stay locked until cliff time, then vest proportionally until the end date."
-            />
+            {mintAddress && (<>
+            {/* Recipient Cards */}
+            <div className={`${CARD} space-y-4 p-5`}>
+              <div className="flex items-center justify-between">
+                <SectionHeader title="Recipients" caption="Wallets that will receive the vested tokens" />
+                <button type="button" onClick={() => setBeneficiaries((prev) => [...prev, ""])} className="rounded-md border border-white/[0.08] px-2.5 py-1 text-[11px] font-medium text-[#8b92a5] hover:text-white">
+                  + Add
+                </button>
+              </div>
+              {beneficiaries.map((addr, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <Field
+                      label={beneficiaries.length > 1 ? `Wallet #${i + 1}` : "Beneficiary Wallet"}
+                      input={
+                        <input
+                          type="text"
+                          placeholder="Solana wallet address..."
+                          value={addr}
+                          onChange={(e) => setBeneficiaries((prev) => prev.map((v, j) => j === i ? e.target.value : v))}
+                          className={`${INPUT} font-mono ${(formErrors.beneficiary && i === 0) || formErrors[`beneficiary_${i}`] ? INPUT_ERR : ""}`}
+                        />
+                      }
+                      error={formErrors[`beneficiary_${i}`] ?? (i === 0 ? formErrors.beneficiary : undefined)}
+                    />
+                  </div>
+                  {beneficiaries.length > 1 && (
+                    <div className="mt-6 flex gap-1">
+                      <button type="button" onClick={() => setBeneficiaries((prev) => [...prev.slice(0, i + 1), addr, ...prev.slice(i + 1)])} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[10px] text-[#8b92a5] hover:text-white" title="Duplicate">
+                        ⧉
+                      </button>
+                      <button type="button" onClick={() => setBeneficiaries((prev) => prev.filter((_, j) => j !== i))} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[10px] text-red-400 hover:text-red-300" title="Remove">
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Schedule Card */}
+            <div className={`${CARD} space-y-4 p-5`}>
+              <SectionHeader title="Schedule" caption="Duration of the linear vesting" />
+              <Field
+                label="Start Date"
+                input={<input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={INPUT} />}
+              />
+              <Field
+                label="Cliff Date (optional)"
+                input={<input type="datetime-local" value={cliffTime} onChange={(e) => setCliffTime(e.target.value)} className={INPUT} />}
+                hint="If set, no tokens vest before this date"
+              />
+              <Field
+                label="End Date"
+                input={<input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={`${INPUT} ${formErrors.schedule ? INPUT_ERR : ""}`} />}
+                error={formErrors.schedule}
+              />
+              <div className={`${SECTION} flex items-start gap-2`}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0 text-purple-400">
+                  <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+                </svg>
+                <p className="text-[12px] leading-5 text-[#8b92a5]">Tokens are locked until the cliff date. After cliff, they unlock proportionally until the end date.</p>
+              </div>
+            </div>
+
+            {/* Advanced Settings */}
+            <div className={`${CARD} p-5`}>
+              <SectionHeader title="Advanced Settings" caption="Optional configuration" />
+              <div className="mt-3">
+                <ToggleCard checked={cancellable} onChange={setCancellable} title="Allow Cancellation" body="Creator can cancel and reclaim unvested tokens after a 7-day grace period." />
+              </div>
+            </div>
+            </>)}
+
+            {/* Result cards */}
+            {txState.type === "success" && <TxResultCard title="Linear stream created!" sig={txState.result.sig} href={txState.result.shareUrl} linkLabel="Open stream" />}
+            {txState.type === "error" && <ErrorCard title="Transaction Failed" body={txState.msg} />}
           </div>
 
-          <SubmitSection
-            tone="purple"
-            idleLabel="Create Linear Stream"
-            loadingLabel={txState.type === "loading" ? txState.label : "Creating stream..."}
+          {/* Sidebar */}
+          <FormSummary
+            amount={amount}
+            tokenSymbol={tokenSymbol}
+            tokenBalance={tokenBalance}
+            streamCount={beneficiaries.filter((b) => b.trim()).length || 1}
+            mode="single"
+            submitLabel={`Create ${beneficiaries.filter((b) => b.trim()).length || 1} Linear Stream${beneficiaries.filter((b) => b.trim()).length > 1 ? "s" : ""}`}
             loading={txState.type === "loading"}
-            disabled={false}
-          >
-            {txState.type === "success" ? (
-              <TxResultCard
-                title="Linear stream created!"
-                sig={txState.result.sig}
-                href={txState.result.shareUrl}
-                linkLabel="Open stream"
-              />
-            ) : null}
-            {txState.type === "error" ? (
-              <ErrorCard title="Transaction Failed" body={txState.msg} />
-            ) : null}
-          </SubmitSection>
-        </form>
+            disabled={!mintAddress || !amount || !beneficiaries[0]?.trim() || !endTime}
+            onSubmit={handleSingleSubmit}
+          />
+        </div>
       ) : (
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-            <BulkCsvSection
-              mintAddress={bulkMint}
-              onMintAddressChange={setBulkMint}
-              mintDecimals={bulkDecimals}
-              mintLoading={bulkMintLoading}
-              campaignId={bulkCampaignId}
-              onCampaignIdChange={setBulkCampaignId}
-              cancellable={bulkCancellable}
-              onCancellableChange={setBulkCancellable}
-              csvText={csvText}
-              onCsvTextChange={(value) => {
-                setCsvText(value);
-                setCsvResult(null);
-                setTxState({ type: "idle" });
-              }}
-              onParse={handleCsvParse}
-              csvTemplate={bulkCsvTemplate()}
-              csvResult={csvResult}
-              prepared={prepared}
-            />
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-5">
+            {/* Token Selection (required first) */}
+            <div className={`${CARD} space-y-4 p-5`}>
+              <SectionHeader title="Token" caption="Select the token before uploading CSV" />
+              <div>
+                <label className={LABEL}>Token</label>
+                <TokenPickerButton mintAddress={bulkMint} onSelect={(mint, dec) => { setBulkMint(mint); setBulkDecimals(dec); }} error={undefined} />
+              </div>
+            </div>
 
-            <FormSummary
-              title="Campaign Summary"
-              caption="Bulk linear campaigns prepare a Merkle tree, then fund the shared vault."
-              rows={bulkSummaryRows}
-              notice="Bulk flow is two-step: create campaign first, then fund the vault with the full total supply."
-            />
+            {bulkMint && (
+              <BulkCsvSection
+                mintAddress={bulkMint}
+                onMintAddressChange={(v) => setBulkMint(v)}
+                mintDecimals={bulkDecimals}
+                mintLoading={false}
+                campaignId={bulkCampaignId}
+                onCampaignIdChange={() => {}}
+                cancellable={bulkCancellable}
+                onCancellableChange={setBulkCancellable}
+                csvText={csvText}
+                onCsvTextChange={(v) => { setCsvText(v); setCsvResult(null); setTxState({ type: "idle" }); }}
+                onParse={handleCsvParse}
+                csvTemplate={bulkCsvTemplate()}
+                csvResult={csvResult}
+                prepared={prepared}
+              />
+            )}
           </div>
-
-          <SubmitSection
-            tone="purple"
-            type="button"
-            onClick={txState.type === "bulk-created" ? handleBulkFund : handleBulkCreate}
-            idleLabel={bulkButtonLabel}
-            loadingLabel={txState.type === "loading" ? txState.label : "Processing..."}
-            loading={txState.type === "loading"}
-            disabled={txState.type !== "bulk-ready" && txState.type !== "bulk-created"}
-          >
-            {txState.type === "bulk-created" ? (
-              <TxResultCard
-                title="Campaign created!"
-                sig={txState.sig}
-                href={`/campaign/${txState.treeAddress}`}
-                linkLabel="View campaign"
-              />
-            ) : null}
-            {txState.type === "bulk-funded" ? (
-              <TxResultCard
-                title="Campaign funded!"
-                sig={txState.sig}
-                href={`/campaign/${txState.treeAddress}`}
-                linkLabel="View campaign"
-              />
-            ) : null}
-            {txState.type === "error" ? (
-              <ErrorCard title="Transaction Failed" body={txState.msg} />
-            ) : null}
-          </SubmitSection>
+          <div className="space-y-4">
+            <FormSummary
+              amount={prepared?.totalSupply ?? "0"}
+              tokenSymbol={bulkMint ? bulkMint.slice(0, 4) : ""}
+              tokenBalance={null}
+              streamCount={1}
+              mode="bulk"
+              submitLabel={txState.type === "bulk-created" ? "Step 2: Fund Vault" : "Step 1: Create Campaign"}
+              loading={txState.type === "loading"}
+              disabled={txState.type !== "bulk-ready" && txState.type !== "bulk-created"}
+              onSubmit={txState.type === "bulk-created" ? handleBulkFund : handleBulkCreate}
+            />
+            {txState.type === "bulk-created" && <TxResultCard title="Campaign created!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
+            {txState.type === "bulk-funded" && <TxResultCard title="Campaign funded!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
+            {txState.type === "error" && <ErrorCard title="Transaction Failed" body={txState.msg} />}
+          </div>
         </div>
       )}
     </div>

@@ -56,6 +56,8 @@ pub enum VestingError {
     CampaignCancelled,
     #[msg("Campaign is not paused")]
     NotPaused,
+    #[msg("Completed campaigns cannot be paused, unpaused, or cancelled")]
+    CampaignCompleted,
 
     #[msg("Campaign is not cancelled")]
     NotCancelled,

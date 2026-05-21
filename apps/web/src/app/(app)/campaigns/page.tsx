@@ -149,36 +149,86 @@ export default function CampaignsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
   const [mintDecimals, setMintDecimals] = useState<Record<string, number>>({});
+  const [decimalsLoading, setDecimalsLoading] = useState(false);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+
+  // Auto-refresh when page becomes visible (e.g., after tab switch)
+  useEffect(() => {
+    const handler = () => setLocalRefreshKey((k) => k + 1);
+    const visHandler = () => {
+      if (document.visibilityState === "visible") handler();
+    };
+    window.addEventListener("focus", handler);
+    document.addEventListener("visibilitychange", visHandler);
+    return () => {
+      window.removeEventListener("focus", handler);
+      document.removeEventListener("visibilitychange", visHandler);
+    };
+  }, []);
 
   const walletAddress = publicKey?.toBase58();
   const allCampaignsQuery = useCampaignList({ limit: 100 });
   const recipientCampaignsQuery = useBeneficiaryCampaigns(walletAddress);
-  const localCampaigns = useLocalCampaigns(walletAddress);
+  const localCampaigns = useLocalCampaigns(walletAddress, localRefreshKey);
 
   const senderCampaigns = useMemo(() => {
     const dbSenderCampaigns = (allCampaignsQuery.data?.campaigns ?? []).filter(
       (campaign) => !walletAddress || campaign.creator === walletAddress,
     ) as SenderCampaign[];
 
-    const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
-    const localOnly = localCampaigns.senderCampaigns.filter(
-      (campaign) => !seen.has(campaign.treeAddress),
+    const localMap = new Map(
+      localCampaigns.senderCampaigns.map((c) => [c.treeAddress, c]),
     );
 
-    return [...dbSenderCampaigns, ...localOnly];
-  }, [allCampaignsQuery.data?.campaigns, localCampaigns.senderCampaigns, walletAddress]);
+    const merged = dbSenderCampaigns.map((c) => {
+      const local = localMap.get(c.treeAddress);
+      if (!local) return c;
+      return { ...c, paused: local.paused, cancelledAt: local.cancelledAt };
+    });
+
+    const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
+    const localOnly = allCampaignsQuery.error
+      ? localCampaigns.senderCampaigns.filter(
+          (campaign) => !seen.has(campaign.treeAddress),
+        )
+      : [];
+
+    return [...merged, ...localOnly];
+  }, [
+    allCampaignsQuery.data?.campaigns,
+    allCampaignsQuery.error,
+    localCampaigns.senderCampaigns,
+    walletAddress,
+  ]);
 
   const recipientCampaigns = useMemo(
     () => {
       const dbRecipientCampaigns = (recipientCampaignsQuery.data?.campaigns ?? []) as RecipientCampaign[];
-      const seen = new Set(dbRecipientCampaigns.map((campaign) => campaign.treeAddress));
-      const localOnly = localCampaigns.recipientCampaigns.filter(
-        (campaign) => !seen.has(campaign.treeAddress),
+
+      const localMap = new Map(
+        localCampaigns.recipientCampaigns.map((c) => [c.treeAddress, c]),
       );
 
-      return [...dbRecipientCampaigns, ...localOnly];
+      const merged = dbRecipientCampaigns.map((c) => {
+        const local = localMap.get(c.treeAddress);
+        if (!local) return c;
+        return { ...c, paused: local.paused, cancelledAt: local.cancelledAt };
+      });
+
+      const seen = new Set(dbRecipientCampaigns.map((campaign) => campaign.treeAddress));
+      const localOnly = recipientCampaignsQuery.error
+        ? localCampaigns.recipientCampaigns.filter(
+            (campaign) => !seen.has(campaign.treeAddress),
+          )
+        : [];
+
+      return [...merged, ...localOnly];
     },
-    [localCampaigns.recipientCampaigns, recipientCampaignsQuery.data?.campaigns],
+    [
+      localCampaigns.recipientCampaigns,
+      recipientCampaignsQuery.data?.campaigns,
+      recipientCampaignsQuery.error,
+    ],
   );
 
   useEffect(() => {
@@ -191,10 +241,12 @@ export default function CampaignsPage() {
 
     if (uniqueMints.length === 0) {
       setMintDecimals({});
+      setDecimalsLoading(false);
       return;
     }
 
     let cancelled = false;
+    setDecimalsLoading(true);
     void Promise.all(
       uniqueMints.map(async (mint) => {
         try {
@@ -212,6 +264,7 @@ export default function CampaignsPage() {
         if (entry) next[entry[0]] = entry[1];
       }
       setMintDecimals(next);
+      setDecimalsLoading(false);
     });
 
     return () => {
@@ -312,16 +365,19 @@ export default function CampaignsPage() {
 
   const hasLocalRows =
     localCampaigns.senderCampaigns.length > 0 || localCampaigns.recipientCampaigns.length > 0;
+
   const isLoading =
-    allCampaignsQuery.isLoading ||
-    recipientCampaignsQuery.isLoading ||
-    localCampaigns.isLoading;
+    allCampaignsQuery.isFetching ||
+    recipientCampaignsQuery.isFetching ||
+    localCampaigns.isLoading ||
+    decimalsLoading;
   const apiError =
     allCampaignsQuery.error?.message ?? recipientCampaignsQuery.error?.message ?? null;
   const error = rows.length === 0 ? apiError ?? localCampaigns.error : null;
   const showingLocalFallback = !!apiError && hasLocalRows;
 
   async function refreshAll() {
+    setLocalRefreshKey((k) => k + 1);
     await Promise.all([allCampaignsQuery.refetch(), recipientCampaignsQuery.refetch()]);
   }
 
@@ -423,10 +479,12 @@ export default function CampaignsPage() {
           ) : (
             <div className="space-y-4">
               {filteredRows.map((row) => {
-                const decimals = mintDecimals[row.mint] ?? 0;
-                const amountDisplay = formatWithDecimals(row.amountRaw, decimals);
+                const decimals = mintDecimals[row.mint];
+                const amountDisplay = decimals !== undefined
+                  ? formatWithDecimals(row.amountRaw, decimals)
+                  : "...";
                 const claimableDisplay =
-                  row.claimableRaw !== undefined
+                  row.claimableRaw !== undefined && decimals !== undefined
                     ? formatWithDecimals(row.claimableRaw, decimals)
                     : null;
 

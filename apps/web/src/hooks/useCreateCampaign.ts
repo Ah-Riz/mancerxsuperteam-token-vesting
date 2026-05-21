@@ -104,8 +104,8 @@ export function useCreateCampaign() {
       } catch (error) {
         indexWarning =
           error instanceof Error
-            ? `Campaign created on-chain, but indexing failed: ${error.message}`
-            : "Campaign created on-chain, but indexing failed.";
+            ? `Campaign created on-chain, but DB indexing failed and was queued for retry: ${error.message}`
+            : "Campaign created on-chain, but DB indexing failed and was queued for retry.";
       }
 
       return {

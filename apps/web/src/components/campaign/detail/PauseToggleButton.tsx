@@ -41,7 +41,7 @@ export function PauseToggleButton({
           pauseAuthority: publicKey,
           vestingTree: treePubkey,
         })
-        .rpc();
+        .rpc({ commitment: "confirmed" });
 
       toast(paused ? "Campaign resumed." : "Campaign paused.", "success");
       onSuccess();

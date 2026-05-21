@@ -49,7 +49,7 @@ describe("useCampaignList", () => {
       json: async () => mockResponse,
     });
 
-    const { result } = renderHook(() => useCampaignList(), {
+    const { result } = renderHook(() => useCampaignList({}), {
       wrapper: createWrapper(),
     });
 
@@ -162,7 +162,7 @@ describe("useCampaignList", () => {
       status: 500,
     });
 
-    const { result } = renderHook(() => useCampaignList(), {
+    const { result } = renderHook(() => useCampaignList({}), {
       wrapper: createWrapper(),
     });
 
@@ -171,7 +171,7 @@ describe("useCampaignList", () => {
     expect(result.current.error.message).toContain("500");
   });
 
-  it("uses staleTime of 10 seconds", async () => {
+  it("uses staleTime of 5 seconds", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
@@ -185,12 +185,12 @@ describe("useCampaignList", () => {
     const wrapper = ({ children }: { children: React.ReactNode }) =>
       React.createElement(QueryClientProvider, { client: qc }, children);
 
-    const { result: result1 } = renderHook(() => useCampaignList(), {
+    const { result: result1 } = renderHook(() => useCampaignList({}), {
       wrapper,
     });
     await waitFor(() => expect(result1.current.isSuccess).toBe(true));
 
-    const { result: result2 } = renderHook(() => useCampaignList(), {
+    const { result: result2 } = renderHook(() => useCampaignList({}), {
       wrapper,
     });
     await waitFor(() => expect(result2.current.isSuccess).toBe(true));

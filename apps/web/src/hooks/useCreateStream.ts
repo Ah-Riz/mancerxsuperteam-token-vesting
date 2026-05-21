@@ -129,8 +129,8 @@ export function useCreateStream() {
       } catch (error) {
         indexWarning =
           error instanceof Error
-            ? `Stream created on-chain, but indexing failed: ${error.message}`
-            : "Stream created on-chain, but indexing failed.";
+            ? `Stream created on-chain, but DB indexing failed and was queued for retry: ${error.message}`
+            : "Stream created on-chain, but DB indexing failed and was queued for retry.";
       }
 
       const urlParams = new URLSearchParams({

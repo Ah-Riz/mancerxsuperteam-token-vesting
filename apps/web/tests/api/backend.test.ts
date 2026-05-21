@@ -34,6 +34,10 @@ import {
   createRootVersionRequestSchema,
 } from "@/lib/api/validators";
 import {
+  buildCreateCampaignIndexPayload,
+  prepareBulkCampaign,
+} from "@/lib/campaign/bulk";
+import {
   syncClaimEvents,
   parseClaimedEvent,
   CLAIMED_DISCRIMINATOR,
@@ -335,6 +339,57 @@ describe("POST /api/campaigns", () => {
     expect(res2.status).toBe(200);
     expect(json2.ok).toBe(true);
     expect(json2.campaignId).toBe(json1.campaignId);
+  });
+
+  it("accepts a valid multi-leaf payload built by the frontend bulk helpers", async () => {
+    const prepared = prepareBulkCampaign([
+      {
+        rowNumber: 2,
+        beneficiary: BENEFICIARY,
+        amountInput: "1",
+        amountRaw: "1000000",
+        releaseType: 0,
+        startTime: 1700000000,
+        cliffTime: 1700003600,
+        endTime: 1700003600,
+        milestoneIdx: 0,
+      },
+      {
+        rowNumber: 3,
+        beneficiary: OTHER_BENEFICIARY,
+        amountInput: "2.5",
+        amountRaw: "2500000",
+        releaseType: 1,
+        startTime: 1700000000,
+        cliffTime: 1700003600,
+        endTime: 1731536000,
+        milestoneIdx: 0,
+      },
+    ]);
+
+    const body = buildCreateCampaignIndexPayload({
+      treeAddress: uniqueTreeAddress(),
+      creator: CREATOR,
+      mint: MINT,
+      campaignId: 22,
+      cancellable: true,
+      cancelAuthority: CREATOR,
+      pauseAuthority: CREATOR,
+      createdAt: 1700000000,
+      prepared,
+    });
+
+    const req = new NextRequest(makeUrl("/api/campaigns"), {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    const res = await postCampaigns(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.ok).toBe(true);
+    expect(json.campaignId).toBeGreaterThan(0);
   });
 
   it("returns 400 for validation failure", async () => {

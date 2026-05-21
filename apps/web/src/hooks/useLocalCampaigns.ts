@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { derivePda } from "@/lib/anchor/client";
-import { listLocalStreamSchedules } from "@/lib/stream/persist";
+import {
+  listLocalStreamRecords,
+  saveLocalCampaignSnapshotLocal,
+  type CachedLocalCampaignSnapshot,
+} from "@/lib/stream/persist";
 import { useVestingProgram } from "./useVestingProgram";
 
 type LocalSenderCampaign = {
@@ -55,29 +59,123 @@ type ClaimRecordAccount = {
   claimedAmount?: { toString(): string };
 };
 
-export function useLocalCampaigns(address: string | undefined): LocalCampaignsState {
+type VestingTreeAccount = {
+  creator: { toBase58(): string };
+  mint: { toBase58(): string };
+  campaignId: { toString(): string };
+  totalSupply: { toString(): string };
+  totalClaimed: { toString(): string };
+  cancelledAt?: { toString(): string } | null;
+  createdAt: { toString(): string };
+  leafCount: { toString(): string } | number;
+  cancellable: unknown;
+  paused: unknown;
+};
+
+function buildSenderCampaign(
+  treeAddress: string,
+  currentAddress: string,
+  cached: CachedLocalCampaignSnapshot,
+): LocalSenderCampaign | null {
+  if (cached.creator !== currentAddress) return null;
+
+  return {
+    treeAddress,
+    creator: cached.creator,
+    mint: cached.mint,
+    campaignId: cached.campaignId,
+    leafCount: cached.leafCount,
+    totalSupply: cached.totalSupply,
+    totalClaimed: cached.totalClaimed,
+    cancellable: cached.cancellable,
+    paused: cached.paused,
+    cancelledAt: cached.cancelledAt,
+    createdAt: cached.createdAt,
+    metadata: null,
+  };
+}
+
+function buildRecipientCampaign(
+  treeAddress: string,
+  currentAddress: string,
+  schedule: {
+    beneficiary?: string;
+    releaseType: number;
+    startTime: number;
+    cliffTime: number;
+    endTime: number;
+    milestoneIdx: number;
+  },
+  cached: CachedLocalCampaignSnapshot,
+): LocalRecipientCampaign | null {
+  if (schedule.beneficiary !== currentAddress) return null;
+
+  return {
+    treeAddress,
+    creator: cached.creator,
+    mint: cached.mint,
+    campaignId: cached.campaignId,
+    totalSupply: cached.totalSupply,
+    leafCount: cached.leafCount,
+    paused: cached.paused,
+    cancelledAt: cached.cancelledAt,
+    createdAt: cached.createdAt,
+    metadata: null,
+    myClaimed: cached.myClaimed ?? "0",
+    myLeaf: {
+      leafIndex: 0,
+      amount: cached.totalSupply,
+      releaseType: schedule.releaseType,
+      startTime: schedule.startTime,
+      cliffTime: schedule.cliffTime,
+      endTime: schedule.endTime,
+      milestoneIdx: schedule.milestoneIdx,
+    },
+  };
+}
+
+async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 150 * (attempt + 1));
+        });
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+export function useLocalCampaigns(address: string | undefined, refreshKey?: number): LocalCampaignsState {
   const program = useVestingProgram();
-  const [state, setState] = useState<LocalCampaignsState>({
+  const [state, setState] = useState<LocalCampaignsState>(() => ({
     senderCampaigns: [],
     recipientCampaigns: [],
-    isLoading: false,
+    isLoading: !!address && listLocalStreamRecords().length > 0,
     error: null,
-  });
+  }));
 
   useEffect(() => {
-    if (!program || !address) {
-      setState({
-        senderCampaigns: [],
-        recipientCampaigns: [],
-        isLoading: false,
-        error: null,
-      });
+    if (!address) {
+      setState({ senderCampaigns: [], recipientCampaigns: [], isLoading: false, error: null });
+      return;
+    }
+    if (!program) {
+      const hasLocal = listLocalStreamRecords().length > 0;
+      setState((prev) => ({ ...prev, isLoading: hasLocal }));
       return;
     }
 
     const currentAddress = address;
     const activeProgram = program;
-    const localStreams = listLocalStreamSchedules();
+    const localStreams = listLocalStreamRecords();
     if (localStreams.length === 0) {
       setState({
         senderCampaigns: [],
@@ -97,10 +195,12 @@ export function useLocalCampaigns(address: string | undefined): LocalCampaignsSt
         const addressKey = new PublicKey(currentAddress);
 
         const results = await Promise.all(
-          localStreams.map(async ({ treeAddress, schedule }) => {
+          localStreams.map(async ({ treeAddress, schedule, cachedCampaign }) => {
             try {
               const treePubkey = new PublicKey(treeAddress);
-              const account = await (activeProgram.account as any).vestingTree.fetch(treePubkey);
+              const account = (await retry(
+                () => (activeProgram.account as any).vestingTree.fetch(treePubkey),
+              )) as VestingTreeAccount;
 
               const creator = account.creator.toBase58();
               const mint = account.mint.toBase58();
@@ -141,14 +241,29 @@ export function useLocalCampaigns(address: string | undefined): LocalCampaignsSt
                     treePubkey.toBuffer(),
                     addressKey.toBuffer(),
                   ]);
-                  const claimRecord = (await (activeProgram.account as any).claimRecord.fetch(
-                    claimRecordPda,
+                  const claimRecord = (await retry(
+                    () => (activeProgram.account as any).claimRecord.fetch(claimRecordPda),
+                    2,
                   )) as ClaimRecordAccount;
                   myClaimed = claimRecord.claimedAmount?.toString() ?? "0";
                 } catch {
                   myClaimed = "0";
                 }
               }
+
+              saveLocalCampaignSnapshotLocal(treeAddress, {
+                creator,
+                mint,
+                campaignId,
+                leafCount,
+                totalSupply,
+                totalClaimed,
+                cancellable: Boolean(account.cancellable),
+                paused: Boolean(account.paused),
+                cancelledAt,
+                createdAt,
+                myClaimed,
+              });
 
               const recipientCampaign =
                 isRecipient
@@ -178,7 +293,20 @@ export function useLocalCampaigns(address: string | undefined): LocalCampaignsSt
 
               return { senderCampaign, recipientCampaign };
             } catch {
-              return null;
+              if (!cachedCampaign) return null;
+              return {
+                senderCampaign: buildSenderCampaign(
+                  treeAddress,
+                  currentAddress,
+                  cachedCampaign,
+                ),
+                recipientCampaign: buildRecipientCampaign(
+                  treeAddress,
+                  currentAddress,
+                  schedule,
+                  cachedCampaign,
+                ),
+              };
             }
           }),
         );
@@ -209,7 +337,7 @@ export function useLocalCampaigns(address: string | undefined): LocalCampaignsSt
     return () => {
       cancelled = true;
     };
-  }, [address, program]);
+  }, [address, program, refreshKey]);
 
   return state;
 }

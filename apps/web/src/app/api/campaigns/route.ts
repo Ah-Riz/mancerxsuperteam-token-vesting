@@ -5,6 +5,10 @@ import { campaigns, rootVersions, leaves } from "@/lib/db/schema";
 import { createCampaignRequestSchema } from "@/lib/api/validators";
 import { hashLeaf, hashNode } from "@/lib/merkle/builder";
 
+function makeRequestId(): string {
+  return `campaigns-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // ---------------------------------------------------------------------------
 // verifyProof — standalone proof verification using the web app's merkle lib.
 // Mirrors clients/ts/src/merkle.ts verifyProof() exactly.
@@ -33,11 +37,51 @@ function verifyProof(
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? makeRequestId();
+
   try {
     const body = await request.json();
+    console.info("[POST /api/campaigns] Request received", {
+      requestId,
+      treeAddress:
+        typeof body === "object" && body !== null && "treeAddress" in body
+          ? body.treeAddress
+          : undefined,
+      creator:
+        typeof body === "object" && body !== null && "creator" in body
+          ? body.creator
+          : undefined,
+      mint:
+        typeof body === "object" && body !== null && "mint" in body
+          ? body.mint
+          : undefined,
+      campaignId:
+        typeof body === "object" && body !== null && "campaignId" in body
+          ? body.campaignId
+          : undefined,
+      leafCount:
+        typeof body === "object" && body !== null && "leafCount" in body
+          ? body.leafCount
+          : undefined,
+      leavesLength:
+        typeof body === "object" &&
+        body !== null &&
+        "leaves" in body &&
+        Array.isArray(body.leaves)
+          ? body.leaves.length
+          : undefined,
+      totalSupply:
+        typeof body === "object" && body !== null && "totalSupply" in body
+          ? body.totalSupply
+          : undefined,
+    });
     const parsed = createCampaignRequestSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.error("[POST /api/campaigns] Validation failed", {
+        requestId,
+        issues: parsed.error.issues,
+      });
       return NextResponse.json(
         { error: "Validation failed", details: parsed.error.issues },
         { status: 400 },
@@ -48,6 +92,11 @@ export async function POST(request: NextRequest) {
 
     // Cross-check declared leafCount matches actual leaves
     if (data.leafCount !== data.leaves.length) {
+      console.error("[POST /api/campaigns] leafCount mismatch", {
+        requestId,
+        declaredLeafCount: data.leafCount,
+        actualLeavesLength: data.leaves.length,
+      });
       return NextResponse.json(
         { error: `leafCount (${data.leafCount}) does not match leaves array length (${data.leaves.length})` },
         { status: 400 },
@@ -73,6 +122,12 @@ export async function POST(request: NextRequest) {
     if (data.leaves.length === 1) {
       // Single-leaf tree: root must equal leaf hash
       if (!leafHash.equals(rootBuf)) {
+        console.error("[POST /api/campaigns] Single-leaf root mismatch", {
+          requestId,
+          treeAddress: data.treeAddress,
+          declaredRoot: data.merkleRoot,
+          computedLeafHash: leafHash.toString("hex"),
+        });
         return NextResponse.json(
           { error: "Single-leaf root does not match leaf hash" },
           { status: 400 },
@@ -81,6 +136,11 @@ export async function POST(request: NextRequest) {
     } else {
       // Multi-leaf tree: verify first leaf's proof (required)
       if (firstLeaf.proof.length === 0) {
+        console.error("[POST /api/campaigns] Missing proof for multi-leaf campaign", {
+          requestId,
+          treeAddress: data.treeAddress,
+          leafIndex: firstLeaf.leafIndex,
+        });
         return NextResponse.json(
           { error: "Multi-leaf campaign requires proof for first leaf" },
           { status: 400 },
@@ -89,6 +149,14 @@ export async function POST(request: NextRequest) {
       const proofBufs = firstLeaf.proof.map((sibling) => Buffer.from(sibling));
       const valid = verifyProof(leafHash, proofBufs, firstLeaf.leafIndex, rootBuf);
       if (!valid) {
+        console.error("[POST /api/campaigns] Proof verification failed", {
+          requestId,
+          treeAddress: data.treeAddress,
+          leafIndex: firstLeaf.leafIndex,
+          proofDepth: firstLeaf.proof.length,
+          declaredRoot: data.merkleRoot,
+          computedLeafHash: leafHash.toString("hex"),
+        });
         return NextResponse.json(
           { error: "Proof verification failed for first leaf" },
           { status: 400 },
@@ -110,6 +178,14 @@ export async function POST(request: NextRequest) {
       proof: leaf.proof,
     }));
 
+    console.info("[POST /api/campaigns] Validation and Merkle verification passed", {
+      requestId,
+      treeAddress: data.treeAddress,
+      leafCount: data.leafCount,
+      totalSupply: data.totalSupply,
+      firstLeafAmount: data.leaves[0]?.amount,
+    });
+
     return await db.transaction(async (tx) => {
       // Idempotent retry: check before insert (catching 23505 leaves the tx aborted in Postgres)
       const [existing] = await tx
@@ -119,12 +195,21 @@ export async function POST(request: NextRequest) {
         .limit(1);
 
       if (existing) {
+        console.info("[POST /api/campaigns] Existing campaign returned", {
+          requestId,
+          treeAddress: data.treeAddress,
+          campaignId: existing.id,
+        });
         return NextResponse.json(
           { ok: true, campaignId: existing.id },
           { status: 200 },
         );
       }
 
+      console.info("[POST /api/campaigns] Inserting campaign row", {
+        requestId,
+        treeAddress: data.treeAddress,
+      });
       const [inserted] = await tx
         .insert(campaigns)
         .values({
@@ -136,6 +221,8 @@ export async function POST(request: NextRequest) {
           leafCount: data.leafCount,
           totalSupply: Number(data.totalSupply),
           cancellable: data.cancellable,
+          cancelAuthority: data.cancelAuthority,
+          pauseAuthority: data.pauseAuthority,
           createdAt: data.createdAt,
           metadata: data.metadata ?? null,
         })
@@ -143,6 +230,11 @@ export async function POST(request: NextRequest) {
       const campaignId = inserted.id;
 
       // Insert root version (version = 1)
+      console.info("[POST /api/campaigns] Inserting root version", {
+        requestId,
+        treeAddress: data.treeAddress,
+        campaignId,
+      });
       const [insertedRootVersion] = await tx
         .insert(rootVersions)
         .values({
@@ -157,6 +249,12 @@ export async function POST(request: NextRequest) {
 
       // Insert leaves
       if (leafRows.length > 0) {
+        console.info("[POST /api/campaigns] Inserting leaves", {
+          requestId,
+          treeAddress: data.treeAddress,
+          rootVersionId: insertedRootVersion.id,
+          leafCount: leafRows.length,
+        });
         await tx
           .insert(leaves)
           .values(
@@ -167,10 +265,16 @@ export async function POST(request: NextRequest) {
           );
       }
 
+      console.info("[POST /api/campaigns] Campaign indexed", {
+        requestId,
+        treeAddress: data.treeAddress,
+        campaignId,
+        leafCount: leafRows.length,
+      });
       return NextResponse.json({ ok: true, campaignId }, { status: 201 });
     });
   } catch (error) {
-    console.error("[POST /api/campaigns] Error:", error);
+    console.error("[POST /api/campaigns] Error", { requestId, error });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
