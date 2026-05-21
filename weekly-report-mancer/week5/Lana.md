@@ -138,7 +138,7 @@ Tracker: [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](../../docs/BE-SC-MERKLE-ACCE
 | Item | Value |
 |------|-------|
 | Program ID | `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` |
-| Upgrade slot | **463223253** |
+| Upgrade slot | **463874212** (milestone hardening) |
 | Upgrade authority | `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6` |
 | Instructions added | `set_milestone_released`, `cancel_stream` (14 total) |
 

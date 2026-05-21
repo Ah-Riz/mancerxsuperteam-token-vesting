@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-21
 **Network:** devnet (https://api.devnet.solana.com)
-**Program:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (upgraded slot **463223253**)
+**Program:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (upgraded slot **463874212**)
 **Wallet:** `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6` (program upgrade authority)
 **Method:** `pnpm test:devnet` (`scripts/test-devnet.sh` → `ts-mocha` on devnet RPC)
 

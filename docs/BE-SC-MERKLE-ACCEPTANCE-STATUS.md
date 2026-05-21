@@ -16,7 +16,7 @@
 | 2 | DB schema — 4 tables + indexes on Supabase | **Done** |
 | 3 | E2E — prepare → POST → GET proof → verify (3 release types) | **5/5** (`scripts/test-be-merkle-pipeline.ts`) |
 | 4 | Local build + **86/86** SC tests | **Pass** (`pnpm test:localnet`; keypair must match `G6iaig…`) |
-| 4b | Devnet SC (`pnpm test:devnet`) | **86 pass, 1 pending** (T68 setClock) — upgrade slot **463223253** |
+| 4b | Devnet SC (`pnpm test:devnet`) | **86 pass, 1 pending** (T68 setClock) — upgrade slot **463874212** |
 | 5 | Vercel deploy — 8 API routes | **Live** |
 | 6 | Post-deploy E2E (`--url`, `--timeout`) | **Pass** (re-run after Vercel redeploy) |
 

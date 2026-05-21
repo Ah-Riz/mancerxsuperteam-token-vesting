@@ -32,7 +32,7 @@ velthoryn/
 
 ## Current status
 
-**Fully implemented and deployed to devnet.** All **14** instruction handlers (including `create_stream`, `withdraw`, `set_milestone_released`, and `cancel_stream`), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (33 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
+**Fully implemented and deployed to devnet.** All **14** instruction handlers (including `create_stream`, `withdraw`, `set_milestone_released`, and `cancel_stream`), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (34 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
 **Test results: 86/86 SC tests PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
 **BE–SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) through prepare → POST (all leaves verified) → GET proof → verify. RLS on all Supabase tables. **Bootcamp acceptance: 8/8** — see [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md).
@@ -146,7 +146,7 @@ Frontend docs: [`docs/PRD_GERAL.md`](docs/PRD_GERAL.md), [`docs/PDD_GERAL.md`](d
 
 ## Devnet
 
-Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot **463223253** (~447KB allocation). Upgrade authority: wallet `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`.
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot **463874212** (~447KB allocation). Upgrade authority: wallet `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`.
 
 ```bash
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet
@@ -164,7 +164,7 @@ solana program deploy target/deploy/vesting.so --program-id G6iaigUdi2btFwUc2N65
 
 | Workflow | What it runs |
 |----------|----------------|
-| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + `pnpm test:localnet` (79 SC tests) |
+| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + `pnpm test:localnet` (86 SC tests) |
 | [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `drizzle-kit push`) |
 | [`web-ci.yml`](.github/workflows/web-ci.yml) | 3 parallel jobs: merkle parity, E2E pipeline (Postgres + dev server + `test-be-merkle-pipeline.ts`), web build + Vitest (Postgres) |
 
