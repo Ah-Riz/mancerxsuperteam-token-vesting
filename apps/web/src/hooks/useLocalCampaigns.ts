@@ -100,6 +100,7 @@ function buildRecipientCampaign(
   currentAddress: string,
   schedule: {
     beneficiary?: string;
+    amount?: string;
     releaseType: number;
     startTime: number;
     cliffTime: number;
@@ -124,7 +125,7 @@ function buildRecipientCampaign(
     myClaimed: cached.myClaimed ?? "0",
     myLeaf: {
       leafIndex: 0,
-      amount: cached.totalSupply,
+      amount: schedule.amount ?? cached.totalSupply,
       releaseType: schedule.releaseType,
       startTime: schedule.startTime,
       cliffTime: schedule.cliffTime,

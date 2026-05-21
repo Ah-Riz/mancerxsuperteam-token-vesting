@@ -18,9 +18,9 @@ const TREE_ADDRESS = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
 // Mock declarations (RPC / indexer only — no DB mock)
 // ---------------------------------------------------------------------------
 
-const { mockGetSignaturesForAddress, mockGetTransactions } = vi.hoisted(() => ({
+const { mockGetSignaturesForAddress, mockGetTransaction } = vi.hoisted(() => ({
   mockGetSignaturesForAddress: vi.fn(),
-  mockGetTransactions: vi.fn(),
+  mockGetTransaction: vi.fn(),
 }));
 
 vi.mock("@/lib/indexer/claim-events", async (importOriginal) => {
@@ -33,7 +33,7 @@ vi.mock("@/lib/indexer/claim-events", async (importOriginal) => {
 
 const mockConnectionInstance = {
   getSignaturesForAddress: mockGetSignaturesForAddress,
-  getTransactions: mockGetTransactions,
+  getTransaction: mockGetTransaction,
 };
 vi.mock("@solana/web3.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solana/web3.js")>();
@@ -75,7 +75,7 @@ describe("Bug 1: Pagination cursor fix", () => {
       .mockResolvedValueOnce(page1Signatures)
       .mockResolvedValueOnce([]);
 
-    mockGetTransactions.mockResolvedValue([null]);
+    mockGetTransaction.mockResolvedValue(null);
 
     await realSyncClaimEvents(50);
 
@@ -96,7 +96,7 @@ describe("Bug 1: Pagination cursor fix", () => {
       .mockResolvedValueOnce(page1Signatures)
       .mockResolvedValueOnce([]);
 
-    mockGetTransactions.mockResolvedValue([null, null]);
+    mockGetTransaction.mockResolvedValue(null);
 
     await realSyncClaimEvents(100);
 

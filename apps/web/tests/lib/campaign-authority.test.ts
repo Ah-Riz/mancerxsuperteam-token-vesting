@@ -25,6 +25,8 @@ describe("campaign authority helpers", () => {
         cancelAuthority,
         cancellable: true,
         cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
       }),
     ).toBe(true);
 
@@ -34,6 +36,8 @@ describe("campaign authority helpers", () => {
         cancelAuthority,
         cancellable: true,
         cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
       }),
     ).toBe(false);
 
@@ -43,6 +47,8 @@ describe("campaign authority helpers", () => {
         cancelAuthority,
         cancellable: true,
         cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
       }),
     ).toBe(false);
   });
@@ -53,6 +59,8 @@ describe("campaign authority helpers", () => {
         viewer: pauseAuthority,
         pauseAuthority,
         cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
       }),
     ).toBe(true);
 
@@ -61,6 +69,8 @@ describe("campaign authority helpers", () => {
         viewer: creator,
         pauseAuthority,
         cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 0n,
       }),
     ).toBe(false);
 
@@ -69,6 +79,18 @@ describe("campaign authority helpers", () => {
         viewer: pauseAuthority,
         pauseAuthority,
         cancelledAt: 1n,
+        totalSupply: 100n,
+        totalClaimed: 0n,
+      }),
+    ).toBe(false);
+
+    expect(
+      canPauseCampaign({
+        viewer: pauseAuthority,
+        pauseAuthority,
+        cancelledAt: null,
+        totalSupply: 100n,
+        totalClaimed: 100n,
       }),
     ).toBe(false);
   });

@@ -500,13 +500,17 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     ? "Paused"
     : treeState?.cancelledAt
       ? "Cancelled"
-      : "Active";
+      : totalSupply > 0n && totalClaimed >= totalSupply
+        ? "Claimed"
+        : "Active";
 
   const statusBadgeClass = treeState?.paused
     ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
     : treeState?.cancelledAt
       ? "border-red-500/20 bg-red-500/10 text-red-400"
-      : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
+      : totalSupply > 0n && totalClaimed >= totalSupply
+        ? "border-sky-500/20 bg-sky-500/10 text-sky-400"
+        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
 
   /* ---- Cancel handler ---- */
 

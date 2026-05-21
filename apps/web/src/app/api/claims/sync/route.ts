@@ -4,7 +4,7 @@ import { syncClaimEventsForSignatures } from "@/lib/indexer/claim-events";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const signatures = Array.isArray(body?.signatures)
+    const signatures: unknown[] = Array.isArray(body?.signatures)
       ? body.signatures
       : typeof body?.signature === "string"
         ? [body.signature]

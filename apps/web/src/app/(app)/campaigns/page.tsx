@@ -176,16 +176,6 @@ export default function CampaignsPage() {
       (campaign) => !walletAddress || campaign.creator === walletAddress,
     ) as SenderCampaign[];
 
-    const localMap = new Map(
-      localCampaigns.senderCampaigns.map((c) => [c.treeAddress, c]),
-    );
-
-    const merged = dbSenderCampaigns.map((c) => {
-      const local = localMap.get(c.treeAddress);
-      if (!local) return c;
-      return { ...c, paused: local.paused, cancelledAt: local.cancelledAt };
-    });
-
     const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
     const localOnly = allCampaignsQuery.error
       ? localCampaigns.senderCampaigns.filter(
@@ -193,7 +183,7 @@ export default function CampaignsPage() {
         )
       : [];
 
-    return [...merged, ...localOnly];
+    return [...dbSenderCampaigns, ...localOnly];
   }, [
     allCampaignsQuery.data?.campaigns,
     allCampaignsQuery.error,
@@ -205,16 +195,6 @@ export default function CampaignsPage() {
     () => {
       const dbRecipientCampaigns = (recipientCampaignsQuery.data?.campaigns ?? []) as RecipientCampaign[];
 
-      const localMap = new Map(
-        localCampaigns.recipientCampaigns.map((c) => [c.treeAddress, c]),
-      );
-
-      const merged = dbRecipientCampaigns.map((c) => {
-        const local = localMap.get(c.treeAddress);
-        if (!local) return c;
-        return { ...c, paused: local.paused, cancelledAt: local.cancelledAt };
-      });
-
       const seen = new Set(dbRecipientCampaigns.map((campaign) => campaign.treeAddress));
       const localOnly = recipientCampaignsQuery.error
         ? localCampaigns.recipientCampaigns.filter(
@@ -222,7 +202,7 @@ export default function CampaignsPage() {
           )
         : [];
 
-      return [...merged, ...localOnly];
+      return [...dbRecipientCampaigns, ...localOnly];
     },
     [
       localCampaigns.recipientCampaigns,

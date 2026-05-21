@@ -48,19 +48,11 @@ export default function DashboardPage() {
       totalSupply: number | string;
       totalClaimed: number | string;
     }>;
-    const localMap = new Map(
-      localCampaigns.senderCampaigns.map((c) => [c.treeAddress, c]),
-    );
-    const merged = dbCampaigns.map((c) => {
-      const local = localMap.get(c.treeAddress);
-      if (!local) return c;
-      return { ...c, paused: local.paused, cancelledAt: local.cancelledAt };
-    });
     const seen = new Set(dbCampaigns.map((c) => c.treeAddress));
     const localOnly = senderQuery.error
       ? localCampaigns.senderCampaigns.filter((c) => !seen.has(c.treeAddress))
       : [];
-    return [...merged, ...localOnly];
+    return [...dbCampaigns, ...localOnly];
   }, [senderQuery.data?.campaigns, senderQuery.error, localCampaigns.senderCampaigns]);
 
   const recipientCampaigns = useMemo(() => {
@@ -76,46 +68,40 @@ export default function DashboardPage() {
         endTime: number;
       };
     }>;
-    const localMap = new Map(
-      localCampaigns.recipientCampaigns.map((c) => [c.treeAddress, c]),
-    );
-    const merged = dbCampaigns.map((c) => {
-      const local = localMap.get(c.treeAddress);
-      if (!local) return c;
-      return {
-        ...c,
-        paused: local.paused,
-        cancelledAt: local.cancelledAt,
-      };
-    });
     const seen = new Set(dbCampaigns.map((c) => c.treeAddress));
     const localOnly = recipientQuery.error
       ? localCampaigns.recipientCampaigns.filter((c) => !seen.has(c.treeAddress))
       : [];
-    return [...merged, ...localOnly];
+    return [...dbCampaigns, ...localOnly];
   }, [recipientQuery.data?.campaigns, recipientQuery.error, localCampaigns.recipientCampaigns]);
 
   const counts = useMemo(() => {
     const nowTs = BigInt(Math.floor(Date.now() / 1000));
-    const rowStatusByTree = new Map<string, "Active" | "Scheduled" | "Claimable" | "Claimed" | "Paused" | "Cancelled">();
+    const statusesByTree = new Map<
+      string,
+      Array<"Active" | "Scheduled" | "Claimable" | "Claimed" | "Paused" | "Cancelled">
+    >();
 
     for (const campaign of senderCampaigns) {
-      rowStatusByTree.set(campaign.treeAddress, getSenderStreamStatus(campaign));
+      const existing = statusesByTree.get(campaign.treeAddress) ?? [];
+      existing.push(getSenderStreamStatus(campaign));
+      statusesByTree.set(campaign.treeAddress, existing);
     }
 
     for (const campaign of recipientCampaigns) {
-      // Match My Campaigns page behavior: recipient row wins when one tree is both sender and recipient.
-      rowStatusByTree.set(campaign.treeAddress, getRecipientStreamStatus(campaign, nowTs));
+      const existing = statusesByTree.get(campaign.treeAddress) ?? [];
+      existing.push(getRecipientStreamStatus(campaign, nowTs));
+      statusesByTree.set(campaign.treeAddress, existing);
     }
 
-    const activeCount = [...rowStatusByTree.values()].filter(
-      (status) =>
-        status === "Active" ||
-        status === "Claimable",
+    const activeCount = [...statusesByTree.values()].filter(
+      (statuses) =>
+        statuses.includes("Active") ||
+        statuses.includes("Claimable"),
     ).length;
 
     return {
-      total: rowStatusByTree.size,
+      total: statusesByTree.size,
       active: activeCount,
       sender: senderCampaigns.length,
     };

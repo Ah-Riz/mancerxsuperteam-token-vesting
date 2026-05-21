@@ -7,6 +7,7 @@ export interface StreamSchedule {
   endTime: number;
   milestoneIdx: number;
   beneficiary?: string;
+  amount?: string;
   milestoneName?: string;
   milestoneOwner?: string;
   milestoneMode?: string;

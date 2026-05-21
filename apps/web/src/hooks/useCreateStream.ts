@@ -103,6 +103,7 @@ export function useCreateStream() {
         endTime: params.endTime,
         milestoneIdx: params.milestoneIdx,
         beneficiary: beneficiaryKey.toBase58(),
+        amount: rawAmount,
       });
 
       let indexWarning: string | null = null;
