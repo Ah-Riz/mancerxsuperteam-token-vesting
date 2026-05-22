@@ -54,7 +54,7 @@ const ERR = {
   UnauthorizedClaimer: 6010,
   CannotClose: 6028,
   InsufficientVault: 6016,
-  ProofTooLong: 6029,
+  ProofTooLong: 6030,
 } as const;
 
 // ---------------------------------------------------------------------------

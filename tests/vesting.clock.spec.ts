@@ -38,8 +38,8 @@ const GRACE_PERIOD_SECS = 7 * 24 * 60 * 60;
 const ERR = {
   NothingToClaim: 6015,
   InsufficientVault: 6016,
-  GracePeriodActive: 6026,
-  CannotClose: 6027,
+  GracePeriodActive: 6027,
+  CannotClose: 6028,
 } as const;
 
 // ---------------------------------------------------------------------------
