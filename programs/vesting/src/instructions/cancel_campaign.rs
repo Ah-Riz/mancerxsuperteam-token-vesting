@@ -17,12 +17,17 @@ pub struct CancelCampaign<'info> {
         constraint = vesting_tree.cancellable @ VestingError::NotCancellable,
         constraint = vesting_tree.cancelled_at.is_none() @ VestingError::AlreadyCancelled,
         constraint = vesting_tree.cancel_authority == Some(cancel_authority.key()) @ VestingError::Unauthorized,
+        constraint = vesting_tree.total_claimed < vesting_tree.total_supply @ VestingError::FullyVested,
     )]
     pub vesting_tree: Account<'info, crate::state::VestingTree>,
 }
 
 pub fn handler(ctx: Context<CancelCampaign>) -> Result<()> {
     let tree = &mut ctx.accounts.vesting_tree;
+    require!(
+        tree.total_claimed < tree.total_supply,
+        VestingError::CampaignCompleted
+    );
     let cancelled_at = Clock::get()?.unix_timestamp;
     let claimed_at_cancel = tree.total_claimed;
 

@@ -23,6 +23,8 @@ pub struct CreateCampaign<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
 
+    pub mint: Account<'info, Mint>,
+
     #[account(
         init,
         payer = creator,
@@ -46,8 +48,6 @@ pub struct CreateCampaign<'info> {
         associated_token::authority = vault_authority,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    pub mint: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -82,6 +82,7 @@ pub fn handler(ctx: Context<CreateCampaign>, args: CreateCampaignArgs) -> Result
     tree.paused = false;
     tree.pause_authority = args.pause_authority;
     tree.created_at = Clock::get()?.unix_timestamp;
+    tree.milestone_released_flags = [0u8; 32];
     tree.bump = ctx.bumps.vesting_tree;
 
     emit!(CampaignCreated {

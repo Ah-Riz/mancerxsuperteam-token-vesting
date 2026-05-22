@@ -12,9 +12,8 @@ Built by Team 7 (Velthoryn x Superteam Scholarship).
 velthoryn/
 ├── programs/vesting/   # Anchor program (Rust)              — owner: Lana
 ├── clients/ts/         # TypeScript client library (leaf encoding, Merkle tree)
-├── apps/web/           # Frontend dApp + Merkle tooling      — owner: Geral
+├── apps/web/           # Next.js dApp + API routes + Merkle   — owner: Lana (API), Geral (UI)
 ├── tests/              # ts-mocha integration tests
-├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── .github/workflows/  # CI: anchor build + anchor test + lint
 ├── Anchor.toml
 ├── Cargo.toml
@@ -27,17 +26,20 @@ velthoryn/
 | Area                | Owner | Notes                                       |
 | ------------------- | ----- | ------------------------------------------- |
 | `programs/vesting/` | Lana  | Anchor program, instructions, state, math   |
-| `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
-| `apps/web/`         | Geral | Frontend stack, wallet adapter, Merkle tooling |
+| `apps/web/`         | Geral | Frontend UI, wallet adapter                |
+| `apps/web/api/`     | Lana  | Backend API routes, DB, merkle pipeline    |
 | Root configs, CI    | Joint | Workspace files, GitHub Actions             |
 
 ## Current status
 
-**Fully implemented and deployed to devnet.** All 12 instruction handlers (including `create_stream` and `withdraw` for single-recipient streams), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (31 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
+**Fully implemented and deployed to devnet.** All **14** instruction handlers (including `create_stream`, `withdraw`, `set_milestone_released`, and `cancel_stream`), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (34 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
 
-**Test results: 63/63 PASS**
-- Devnet: 56 passing, 7 skipped (clock-dependent tests skip gracefully on devnet)
-- Localnet (bankrun): 7/7 clock-dependent tests pass with deterministic clock warping
+**Test results: 86/86 SC tests PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
+**BE–SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) through prepare → POST (all leaves verified) → GET proof → verify. RLS on all Supabase tables. **Bootcamp acceptance: 8/8** — see [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md).
+- Devnet (`pnpm test:devnet`): **86 passing, 1 pending** (T68 clock warp; cancel logic covered by T64b–T64d)
+- Clock-dependent cases: `tests/vesting.clock.spec.ts` via **solana-bankrun** (T17–T20, T25, T47, T55–T64, EXPLOIT 4)
+
+See [`docs/STREAM_MODEL.md`](docs/STREAM_MODEL.md) (tutorial `Stream` PDA vs campaign model) and [`docs/ERROR_MAP.md`](docs/ERROR_MAP.md).
 
 | Instruction          | Role                                                              |
 | -------------------- | ----------------------------------------------------------------- |
@@ -53,7 +55,8 @@ velthoryn/
 | `unpause_campaign`   | Resume a paused campaign.                                         |
 | `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
 | `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
-| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
+| `set_milestone_released` | Creator sets a milestone flag before milestone unlock.        |
+| `cancel_stream`      | Creator-only single-leaf cancel: vested → beneficiary, rest → creator. Milestone-aware: released → full amount, unreleased → 0. |
 
 For deeper reads:
 - [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts.
@@ -90,19 +93,11 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-anchor test            # local validator: 56 passing, 7 skipped (clock-dependent)
+pnpm test:localnet     # persistent validator — 86/86 passing (~3m)
+pnpm test:devnet       # against devnet RPC (deployed program + funded wallet)
 ```
 
-### Clock-dependent tests (bankrun)
-
-7 tests require deterministic clock warping and run via `solana-bankrun`:
-
-```bash
-pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
-# 7/7 PASS (~600ms)
-```
-
-These tests (T17, T18, T20, T25, T47, T55, EXPLOIT 4) verify exact vesting percentages, grace period enforcement, and cancel-time clamping.
+Clock-dependent tests (11) use `solana-bankrun` inside the full suite; they are included in `pnpm test:localnet` and do not need a separate run.
 
 ## Frontend (apps/web)
 
@@ -110,39 +105,70 @@ Next.js 15 dApp with wallet integration, vesting stream creation, and token clai
 
 ```bash
 cd apps/web
+cp .env.example .env   # fill in your keys (or symlink ../../.env)
 pnpm dev               # http://localhost:3000
-pnpm test              # 38 Vitest tests (vesting math, PDA derivation, Merkle)
+
+# Vitest — API tests need Postgres (see docs/TESTING.md)
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+pnpm db:push && pnpm test
 ```
 
-Routes:
+### Pages
+
 - `/` — Landing page
 - `/campaign/create` — Create a vesting stream (calls `createStream`)
 - `/campaign/[treeAddress]` — View stream & claim tokens (calls `withdraw`)
 
 Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). Set `NEXT_PUBLIC_RPC_ENDPOINT` to override the default devnet RPC.
 
+### Backend API Routes
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/campaigns` | POST | Create campaign + root version + leaves |
+| `/api/campaigns` | GET | List with filters, pagination |
+| `/api/campaigns/[treeAddress]` | GET | Campaign detail + analytics |
+| `/api/campaigns/[treeAddress]/proof` | GET | Leaf + merkle proof for beneficiary |
+| `/api/campaigns/[treeAddress]/claims` | GET | Claim history |
+| `/api/campaigns/[treeAddress]/root-versions` | GET | Root version history |
+| `/api/beneficiary/[address]/campaigns` | GET | All campaigns for address |
+| `/api/admin/sync` | POST | Indexer: backfill claim events (auth: x-admin-key) |
+
+All routes deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Supabase tables have Row Level Security enabled (read-public, write-service-role).
+
+See [`docs/BACKEND_API.md`](docs/BACKEND_API.md) for full API documentation.
+
+### Vercel Deployment
+
+Deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Root directory: `apps/web/`. Required env vars: see `apps/web/.env.example`.
+
 Frontend docs: [`docs/PRD_GERAL.md`](docs/PRD_GERAL.md), [`docs/PDD_GERAL.md`](docs/PDD_GERAL.md), [`docs/TDD_GERAL.md`](docs/TDD_GERAL.md), [`docs/SECURITY_GERAL.md`](docs/SECURITY_GERAL.md).
 
 ## Devnet
 
-Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot 461219566 (~447KB allocation).
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot **463874212** (~447KB allocation). Upgrade authority: wallet `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`.
 
 ```bash
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet
 ```
 
-To redeploy (inject keypair from your local file — program ID stays stable):
+To redeploy, the signing keypair must match `declare_id!` (`G6iaig…`). If `target/deploy/vesting-keypair.json` was generated locally with a different pubkey, use `solana program deploy` with the upgrade-authority wallet instead of `anchor deploy` (see [`docs/DEVNET_TEST_RESULTS.md`](docs/DEVNET_TEST_RESULTS.md)).
 
 ```bash
 solana config set --url devnet
 anchor build
-anchor deploy --provider.cluster devnet
+solana program deploy target/deploy/vesting.so --program-id G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu
 ```
 
 ## CI
 
-`.github/workflows/ci.yml` runs `anchor build` + `anchor test` (local validator) on every push and PR.
-`.github/workflows/lint.yml` runs `cargo clippy` + Next.js ESLint (`pnpm lint` in `apps/web/`) on pushes to main/dev branches and PRs to main.
+| Workflow | What it runs |
+|----------|----------------|
+| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + `pnpm test:localnet` (86 SC tests) |
+| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `drizzle-kit push`) |
+| [`web-ci.yml`](.github/workflows/web-ci.yml) | 3 parallel jobs: merkle parity, E2E pipeline (Postgres + dev server + `test-be-merkle-pipeline.ts`), web build + Vitest (Postgres) |
+
+All web jobs use `DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci` and host-aware SSL (TLS for Supabase, plain TCP for local CI Postgres).
 
 ## License
 

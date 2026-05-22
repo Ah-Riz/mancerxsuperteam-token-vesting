@@ -2,7 +2,7 @@
 
 Audience: Geral and anyone building against the on-chain program from TypeScript.
 
-> **Status:** All 12 instruction handlers are fully implemented with real logic. The program is deployed on devnet (latest upgrade slot 461219566). All 63/63 tests pass: 56 on devnet + 7 clock-dependent tests on localnet via bankrun. Merkle leaf hashing is byte-verified against the TS encoder.
+> **Status:** All **14** instruction handlers are fully implemented with real logic. The program is deployed on devnet (latest upgrade slot **463223253**). **79/79** integration tests pass via `pnpm test:localnet`; `pnpm test:devnet` reports **79 passing, 1 pending** (T64 on public RPC; T64 in bankrun). Merkle leaf hashing is byte-verified against the TS encoder.
 
 ## What you need
 
@@ -49,7 +49,7 @@ function getProgram(provider: anchor.AnchorProvider) {
 }
 ```
 
-The IDL exposes camelCase instruction names: `createCampaign`, `createStream`, `fundCampaign`, `claim`, `withdraw`, `cancelCampaign`, `updateRoot`, `withdrawUnvested`, `pauseCampaign`, `unpauseCampaign`, `closeClaimRecord`, `getVestedAmount`.
+The IDL exposes camelCase instruction names: `createCampaign`, `createStream`, `fundCampaign`, `claim`, `withdraw`, `cancelCampaign`, `cancelStream`, `setMilestoneReleased`, `updateRoot`, `withdrawUnvested`, `pauseCampaign`, `unpauseCampaign`, `closeClaimRecord`, `getVestedAmount`.
 
 ## PDA derivations
 
@@ -268,7 +268,7 @@ Field shapes in `programs/vesting/src/events.rs`.
 
 ## Devnet
 
-Program is deployed on devnet at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (latest upgrade slot 461219566, ~447KB allocation).
+Program is deployed on devnet at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (latest upgrade slot **463223253**, ~447KB allocation).
 
 ```bash
 solana config set --url devnet
@@ -289,22 +289,24 @@ Full form for creating single-beneficiary vesting streams. Fields: campaign ID, 
 
 Recipient dashboard for claiming vested tokens. Fetches `VestingTree` account on-chain, computes vested amount client-side using the same math as `schedule.rs`, shows progress bar and claimable amount. Submits `withdraw` instruction.
 
-### Frontend Tests (Vitest)
+### Web Tests (Vitest)
 
-38 unit tests covering:
-- Vesting math (cliff/linear/milestone, cancel clamp, claimable) — mirrors Rust `schedule.rs`
-- PDA derivation (VestingTree, VaultAuthority, ClaimRecord)
-- Merkle tree (encodeLeaf, hashLeaf, golden vector gate)
+~200 tests in `apps/web/` — see [`TESTING.md`](TESTING.md). Highlights:
+- **API routes** (`tests/api/*`) — real Postgres; campaign CRUD, proofs, claims, beneficiary, admin sync
+- Vesting math, PDA derivation, Merkle builder (golden vector gate)
+- React hooks (mocked `fetch`, no DB)
 
-Run with `npx vitest run` from `apps/web/`.
+Requires `DATABASE_URL` for the full suite. CI provides Postgres in `web-ci.yml` and `lint.yml`.
+
+```bash
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+cd apps/web && pnpm db:push && pnpm test
+```
 
 ## Where to ask
 
 - On-chain bugs / instruction questions → Lana (`programs/vesting/`).
 - Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
-- Frontend / UI questions → Geral (`apps/web/`).
-- IDL / TS types regen → re-run `anchor build`.
-- On-chain bugs / instruction questions → Lana (`programs/vesting/`).
-- Merkle / leaf encoding → Lana (`apps/web/src/lib/merkle/builder.ts`).
+- Backend API / DB / tests → Lana (`apps/web/src/app/api/`, `docs/BACKEND_API.md`).
 - Frontend / UI questions → Geral (`apps/web/`).
 - IDL / TS types regen → re-run `anchor build`.

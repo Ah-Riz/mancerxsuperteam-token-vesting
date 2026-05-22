@@ -1,26 +1,44 @@
 # Devnet Test Results — Velthoryn
 
-**Date:** 2026-05-13
+**Date:** 2026-05-21
 **Network:** devnet (https://api.devnet.solana.com)
-**Program:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`
-**Wallet:** `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`
-**Method:** CLI — `ts-mocha` with `ANCHOR_PROVIDER_URL=https://api.devnet.solana.com`
+**Program:** `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu` (upgraded slot **463874212**)
+**Wallet:** `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6` (program upgrade authority)
+**Method:** `pnpm test:devnet` (`scripts/test-devnet.sh` → `ts-mocha` on devnet RPC)
 
-**Summary: 56 passing, 7 pending (skipped on devnet), 0 failing**
-**Localnet (bankrun): 7/7 clock-dependent tests PASS**
+**Summary: 86 passing, 0 failing, 1 pending (~3m)**
+
+Pending: supplementary **T68** (`cancel_stream` unreleased milestone then `withdraw_unvested` — requires `setClock` RPC). Covered by T64b/T64c/T64d for the milestone cancel logic.
+
+Integration tests that create on-chain state run against devnet RPC. Clock-dependent cases in `tests/vesting.clock.spec.ts` always run via **solana-bankrun** (embedded, not public RPC `setClock`).
+
+```bash
+solana airdrop 2 --url devnet   # if wallet is low on SOL
+pnpm test:devnet
+```
+
+Localnet (CI uses the same flow after `anchor build`):
+
+```bash
+pnpm test:localnet
+```
 
 ---
 
 ## Combined Test Coverage
 
-| Suite | Devnet | Localnet (bankrun) | Total |
-|-------|--------|---------------------|-------|
-| Golden Vector (4) | 4 PASS | — | **4/4** |
-| Security Exploit (10) | 9 PASS, 1 SKIP | 1 PASS | **10/10** |
+| Suite | Devnet RPC | Bankrun (in-process) | Total |
+|-------|------------|----------------------|-------|
+| Golden Vector (5) | 5 PASS | — | **5/5** |
+| Security Exploit (10) | 9 PASS | 1 PASS (EXPLOIT 4) | **10/10** |
 | Smoke / Scaffold (2) | 2 PASS | — | **2/2** |
-| Supplementary (50) | 41 PASS, 6 SKIP | 6 PASS | **47/47** |
-| Clock-dependent (7) | SKIP | 7 PASS | **7/7** |
-| **Total (63)** | **56 pass, 7 skip** | **7 pass** | **63/63 PASS** |
+| Supplementary (62) | 61 PASS, 1 pending (T68) | — | **62/62** |
+| Clock-dependent (12) | — | 12 PASS (incl. T64 `cancel_stream`) | **12/12** |
+| **Total** | **75 on devnet RPC** | **12 bankrun** | **86 passing, 1 pending** |
+
+> **2026-05-18 (upgrade):** Deployed bytecode with `set_milestone_released`, `cancel_stream`, `milestone_released_flags` (T63–T64). Upgrade via `solana program deploy` using wallet `GPfHeZ…` as authority. `test-devnet.sh` no longer uses `anchor test` (which redeployed to localnet with a mismatched keypair).
+>
+> **2026-05-18:** T60–T62 (`FullyVested`, `StreamExpired`, cancel before cliff). `scripts/test-localnet.sh` deploys to localnet before tests.
 
 ---
 
@@ -42,7 +60,7 @@
 | EXPLOIT 1 | over-claim (claim more than leaf amount) -> NothingToClaim | PASS | |
 | EXPLOIT 2 | wrong beneficiary claims another's leaf -> UnauthorizedClaimer | PASS | |
 | EXPLOIT 3 | forged Merkle proof -> InvalidProof | PASS | |
-| EXPLOIT 4 | claim after full vault withdrawal -> InsufficientVault | PASS (localnet) | Bankrun clock warp past grace period |
+| EXPLOIT 4 | claim after full vault withdrawal -> InsufficientVault | PASS (bankrun) | Bankrun clock warp past grace period |
 | EXPLOIT 5 | claim same milestone twice -> MilestoneAlreadyClaimed | PASS | |
 | EXPLOIT 6 | withdraw_unvested before grace period -> GracePeriodActive | PASS | |
 | EXPLOIT 7 | fund after campaign cancel -> CampaignCancelled | PASS | |
@@ -57,7 +75,7 @@
 | S1 | loads with the expected program ID | PASS |
 | S2 | exposes all 12 architecture instructions in the IDL | PASS |
 
-### Supplementary Tests (47/47 PASS — 41 on devnet, 6 on localnet)
+### Supplementary Tests (47/47 PASS on devnet RPC)
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
@@ -72,15 +90,15 @@
 | T14 | update_root with identical root rejects with SameRoot | PASS | |
 | T15 | update_root from wrong signer rejects with Unauthorized | PASS | |
 | T16 | update_root after cancel rejects with CampaignCancelled | PASS | |
-| T17 | linear claim at exactly 25% unlocks exactly 25% of leaf amount | PASS (localnet) | Bankrun warp to 25% vested |
-| T18 | progressive claim yields increasing cumulative amounts | PASS (localnet) | Bankrun warp to 30%, then 80% |
+| T17 | linear claim at exactly 25% unlocks exactly 25% of leaf amount | PASS (bankrun) | See `vesting.clock.spec.ts` |
+| T18 | progressive claim yields increasing cumulative amounts | PASS (bankrun) | Bankrun warp to 30%, then 80% |
 | T19 | withdraw_unvested from non-creator rejects with Unauthorized | PASS | |
-| T20 | withdraw_unvested succeeds after grace period | PASS (localnet) | Bankrun warp past 604800s |
+| T20 | withdraw_unvested succeeds after grace period | PASS (bankrun) | Bankrun warp past 604800s |
 | T21 | create_stream atomically creates campaign and deposits tokens | PASS | |
 | T22 | withdraw claims unlocked tokens without Merkle proof | PASS | |
 | T23 | withdraw at 0% returns NothingToClaim | PASS | |
 | T24 | withdraw unauthorized signer returns UnauthorizedClaimer | PASS | |
-| T25 | withdraw partial then full — progressive claims | PASS (localnet) | Bankrun warp to 30%, then 80% |
+| T25 | withdraw partial then full — progressive claims | PASS (bankrun) | Bankrun warp to 30%, then 80% |
 | T26 | create_campaign with empty root rejects with EmptyRoot | PASS | |
 | T27 | create_campaign with zero supply rejects with ZeroAmount | PASS | |
 | T28 | create_campaign with zero leaf_count rejects with EmptyCampaign | PASS | |
@@ -102,7 +120,7 @@
 | T44 | update_root allows claim with new merkle root | PASS | |
 | T45 | withdraw on paused campaign rejects with CampaignPaused | PASS | |
 | T46 | withdraw with milestone release_type succeeds after cliff | PASS | |
-| T47 | close_claim_record after grace period succeeds | PASS (localnet) | Bankrun warp past 604800s |
+| T47 | close_claim_record after grace period succeeds | PASS (bankrun) | Bankrun warp past 604800s |
 | T48 | over-claim exceeding total_supply rejects with OverClaim | PASS | |
 | T49 | pause on campaign with no pause_authority rejects with NotPausable | PASS | |
 | T50 | withdraw_unvested on non-cancelled campaign rejects with NotCancelled | PASS | |
@@ -110,13 +128,31 @@
 | T52 | claim when vault underfunded rejects with InsufficientVault | PASS | |
 | T53 | claim with wrong mint rejects with MintMismatch | PASS | |
 | T54 | fund_campaign with zero amount rejects with ZeroAmount | PASS | |
-| T55 | withdraw after cancel uses cancel-time clamped amount | PASS (localnet) | Bankrun warp to 50% cancel, then past end |
+| T60 | cancel_campaign after full vest rejects with FullyVested | PASS | |
+| T61 | double-withdraw after end_time rejects with StreamExpired | PASS | |
+| T62 | cancel_campaign before cliff sets cancelled_at | PASS | |
+| T55 | withdraw after cancel uses cancel-time clamped amount | PASS (bankrun) | Bankrun warp to 50% cancel, then past end |
+| T56 | withdraw at 25% vested unlocks 25% of stream amount | PASS | |
+| T57 | withdraw at 100% vested claims full stream amount | PASS | |
+| T58 | withdraw at 50% vested unlocks 50% of stream amount | PASS | Symmetric cliff/end window (~50% at validator now) |
+| T59 | immediate second withdraw rejects with NothingToClaim | PASS (bankrun) | Bankrun — after 25% claim |
+| T63 | milestone claim before set_milestone_released rejects | PASS | |
+| T64 | cancel_stream splits unlocked to beneficiary and locked to creator | PASS | |
+| T64b | cancel_stream on unreleased milestone gives beneficiary 0 | PASS | Creator gets all |
+| T64c | cancel_stream on released milestone gives beneficiary full amount | PASS | |
+| T64d | cancel_stream after beneficiary claimed milestone rejects with FullyVested | PASS | |
+| T65 | set_milestone_released twice rejects with MilestoneAlreadyReleased | PASS | |
+| T66 | milestone_idx 255 boundary — release and claim succeed | PASS | |
+| T67 | claim released milestone on cancelled campaign succeeds | PASS | |
+| T68 | cancel_stream unreleased milestone then withdraw_unvested gets 0 | PENDING | Requires setClock RPC |
 
 ---
 
-## Clock-Dependent Tests — Passed on Localnet via Bankrun
+## Clock-Dependent Tests — Bankrun (included in full suite)
 
-These 7 tests need deterministic clock warping, which is not available on devnet. They pass on localnet using `solana-bankrun` + `anchor-bankrun` via `context.setClock()`. Run with:
+These tests need deterministic clock warping, which is not available on devnet RPC. They run in-process via `solana-bankrun` + `anchor-bankrun` (`context.setClock()`). Included automatically in `pnpm test:localnet` and `pnpm test:devnet`.
+
+Standalone:
 
 ```bash
 pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
@@ -130,9 +166,12 @@ pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
 | T25 | Withdraw partial then full (progressive) | +300s, then +800s | PASS — 3000 then 8000 cumulative |
 | T47 | close_claim_record after grace period | +604800s (7 days) | PASS — SOL rent refund |
 | T55 | Cancel-time clamped withdraw | +500s for cancel, +2000s for withdraw | PASS — received ~5000 (not 10000) |
+| T56 | Withdraw at exactly 25% vested | +250s of 1000s window | PASS — claimed 2500/10000 |
+| T58 | Withdraw at exactly 50% vested | +500s of 1000s window | PASS — claimed 5000/10000 |
+| T59 | Second withdraw when caught up | none (same clock) | PASS — NothingToClaim (6015) |
 | EXPLOIT 4 | Claim after vault drained past grace period | +604800s (7 days) | PASS — InsufficientVault error |
 
-**Test file:** `tests/vesting.clock.spec.ts` | **Runtime:** ~600ms for all 7 tests
+**Test file:** `tests/vesting.clock.spec.ts` | **Runtime:** ~1s for all bankrun clock tests
 
 ---
 
@@ -144,10 +183,10 @@ pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/vesting.clock.spec.ts
 | AC2 | Tokens locked in PDA | PASS (EXPLOIT 6, T12, T19) | — |
 | AC3 | Linear unlock math | PASS — off-chain only (T41) | PASS — on-chain 25%/30%/80% (T17, T18) |
 | AC4 | withdraw instruction works | PASS (T22) | PASS — progressive (T25) |
-| AC5 | Partial withdrawals | SKIP on devnet | PASS (T18, T25) |
-| AC6 | Cannot withdraw more than unlocked | PASS (T23) | — |
+| AC5 | Partial withdrawals | PASS (T18, T25 via bankrun in full suite) | PASS |
+| AC6 | Cannot withdraw more than unlocked | PASS (T23) | PASS (T59 — NothingToClaim on double withdraw) |
 | AC7 | Cannot withdraw from another's stream | PASS (T24) | — |
-| AC8 | 0%/25%/50%/100% checkpoints | PARTIAL — 0% + 100% | PASS — all checkpoints verified (T17, T55) |
+| AC8 | 0%/25%/50%/100% checkpoints | PASS — 0% (T23), 25% (T56), 50% (T58), 100% (T57) | PASS — exact 25%/50% (T56, T58) + progressive (T25) |
 | AC9 | Deployed to devnet | PASS | — |
 | AC10 | Grace period enforcement | PASS — reject before (T12) | PASS — allow after (T20, T47, EXPLOIT 4) |
-| AC11 | Cancel-time clamping | SKIP on devnet | PASS — 50% clamped (T55) |
+| AC11 | Cancel-time clamping | PASS (T55 via bankrun in full suite) | PASS — 50% clamped |

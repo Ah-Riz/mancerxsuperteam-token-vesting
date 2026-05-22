@@ -28,6 +28,8 @@ pub struct CreateStream<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
 
+    pub mint: Account<'info, Mint>,
+
     #[account(
         init,
         payer = creator,
@@ -58,8 +60,6 @@ pub struct CreateStream<'info> {
         constraint = source_ata.owner == creator.key() @ VestingError::Unauthorized,
     )]
     pub source_ata: Account<'info, TokenAccount>,
-
-    pub mint: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -110,6 +110,7 @@ pub fn handler(ctx: Context<CreateStream>, args: CreateStreamArgs) -> Result<()>
     tree.paused = false;
     tree.pause_authority = args.pause_authority;
     tree.created_at = Clock::get()?.unix_timestamp;
+    tree.milestone_released_flags = [0u8; 32];
     tree.bump = ctx.bumps.vesting_tree;
 
     emit!(CampaignCreated {

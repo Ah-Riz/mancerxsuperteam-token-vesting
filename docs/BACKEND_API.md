@@ -1,6 +1,6 @@
 # Backend API + Database Architecture — Phase 2 Design
 
-**Status:** Design complete, implementation pending
+**Status:** Implemented, deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/)
 **Owner:** Lana
 **Companion docs:** `PRD_LANA.md`, `INTEGRATION.md`, `PROGRAM.md`
 
@@ -172,6 +172,10 @@ Both `create_campaign` (batch) and `create_stream` (single-recipient) use the sa
 For `create_stream`: leafCount=1, leaves array has one entry with an empty proof (single-leaf tree, root = leaf hash).
 
 For `create_campaign`: leafCount=N, leaves array has N entries with full proofs.
+
+**Validation:** Every leaf’s proof is verified against `merkleRoot` via [`lib/merkle/verify.ts`](../apps/web/src/lib/merkle/verify.ts). Invalid proofs return **400** with the failing `leafIndex`. `bigint` fields are stored as strings in Postgres.
+
+**Production SSL:** set `DATABASE_SSL_REJECT_UNAUTHORIZED=true` on Vercel when using strict certificate validation.
 
 ### Read Path — Proof Lookup
 
@@ -386,18 +390,44 @@ No SDK changes needed. API accepts serialized form of what `prepareCampaign()` p
 ## 8. Environment Variables
 
 ```env
-# Solana RPC
-NEXT_PUBLIC_RPC_ENDPOINT=https://devnet.helius-rpc.com/?api-key=YOUR_KEY
-
-# IPFS (Pinata)
-PINATA_API_KEY=
-PINATA_SECRET_API_KEY=
-PINATA_GATEWAY_URL=https://gateway.pinata.cloud
-
 # Database (Supabase)
 DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
 
-# Supabase (for client-side Auth + Storage, Phase 2)
+# Solana RPC
+NEXT_PUBLIC_RPC_ENDPOINT=https://devnet.helius-rpc.com/?api-key=YOUR_KEY
+
+# Supabase Auth + Storage
 NEXT_PUBLIC_SUPABASE_URL=https://[PROJECT-REF].supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+# Admin API key for protected endpoints
+ADMIN_API_KEY=
+API_KEY=
+
+# IPFS (Pinata)
+PINATA_JWT=
+PINATA_GATEWAY_URL=https://gateway.pinata.cloud
 ```
+
+---
+
+## 9. Testing
+
+| Layer | Command | Database |
+|-------|---------|----------|
+| API Vitest | `cd apps/web && pnpm test` | **Real Postgres** — `tests/api/backend.test.ts`, `bug-fix-validation.test.ts` use `createCampaignViaPost` / `resetDb()` (no Drizzle mocks) |
+| Merkle parity | `pnpm tsx scripts/test-merkle-parity.ts` | None (pure TS) |
+| E2E pipeline | `pnpm tsx scripts/test-be-merkle-pipeline.ts [--url URL]` | Real API + DB (local dev server or Vercel) |
+
+Local Postgres for Vitest:
+
+```bash
+docker run -d --name vesting-pg -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci \
+  -e POSTGRES_DB=ci -p 5432:5432 postgres:15
+export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
+cd apps/web && pnpm db:push && pnpm test
+```
+
+**RLS:** Enabled on all 4 tables (read-public, write-service-role). **SSL:** `apps/web/src/lib/db/index.ts` enables TLS only for remote hosts; `127.0.0.1` / `localhost` skip TLS (required for CI Postgres).
+
+See [`TESTING.md`](TESTING.md) for full suite breakdown.

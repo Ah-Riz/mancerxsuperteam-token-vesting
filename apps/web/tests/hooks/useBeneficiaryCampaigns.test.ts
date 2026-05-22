@@ -31,6 +31,7 @@ const mockBeneficiaryResponse = {
       cancelledAt: null,
       createdAt: 1700000000,
       metadata: null,
+      myClaimed: "0",
       myLeaf: {
         leafIndex: 0,
         amount: "100000",
