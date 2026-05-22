@@ -173,13 +173,13 @@ export default function CampaignsPage() {
 
   const senderCampaigns = useMemo(() => {
     const dbSenderCampaigns = (allCampaignsQuery.data?.campaigns ?? []).filter(
-      (campaign) => !walletAddress || campaign.creator === walletAddress,
+      (campaign) => walletAddress && campaign.creator === walletAddress,
     ) as SenderCampaign[];
 
     const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
     const localOnly = allCampaignsQuery.error
       ? localCampaigns.senderCampaigns.filter(
-          (campaign) => !seen.has(campaign.treeAddress),
+          (campaign) => !seen.has(campaign.treeAddress) && campaign.creator === walletAddress,
         )
       : [];
 

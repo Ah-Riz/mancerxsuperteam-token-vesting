@@ -15,7 +15,7 @@ import {
 } from "@/lib/campaign/bulk";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
-import { indexCampaign } from "@/lib/stream/persist";
+import { indexCampaign, saveStreamScheduleLocal } from "@/lib/stream/persist";
 import { useVestingProgram } from "./useVestingProgram";
 
 export interface CreateCampaignParams {
@@ -87,6 +87,20 @@ export function useCreateCampaign() {
 
       let indexWarning: string | null = null;
       const treeAddress = vestingTree.toBase58();
+
+      // Save first leaf's schedule to localStorage for detail page display
+      if (params.prepared.leaves.length > 0) {
+        const firstLeaf = params.prepared.leaves[0];
+        saveStreamScheduleLocal(treeAddress, {
+          releaseType: firstLeaf.releaseType,
+          startTime: Number(firstLeaf.startTime),
+          cliffTime: Number(firstLeaf.cliffTime),
+          endTime: Number(firstLeaf.endTime),
+          milestoneIdx: firstLeaf.milestoneIdx,
+          beneficiary: firstLeaf.beneficiary,
+          amount: firstLeaf.amount,
+        });
+      }
 
       try {
         await indexCampaign(

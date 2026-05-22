@@ -31,11 +31,11 @@ export type BulkCsvRow = {
   beneficiary: string;
   amountInput: string;
   amountRaw: string;
-  releaseType: 0 | 1;
+  releaseType: 0 | 1 | 2;
   startTime: number;
   cliffTime: number;
   endTime: number;
-  milestoneIdx: 0;
+  milestoneIdx: number;
 };
 
 export type BulkCsvParseResult = {
@@ -50,12 +50,13 @@ export type PreparedBulkCampaign = {
   releaseMix: {
     cliff: number;
     linear: number;
+    milestone: number;
   };
   leaves: Array<{
     leafIndex: number;
     beneficiary: string;
     amount: string;
-    releaseType: 0 | 1;
+    releaseType: 0 | 1 | 2;
     startTime: string;
     cliffTime: string;
     endTime: string;
@@ -188,7 +189,6 @@ export function parseBulkCsv(
     "releaseType",
     "startTime",
     "cliffTime",
-    "endTime",
   ];
 
   for (const header of requiredHeaders) {
@@ -214,8 +214,8 @@ export function parseBulkCsv(
     const releaseTypeValue = getCell("releaseType");
     const startTimeRaw = getCell("startTime");
     const cliffTimeRaw = getCell("cliffTime");
-    const endTimeRaw = getCell("endTime");
-    const milestoneIdxRaw = getCell("milestoneIdx").trim();
+    const endTimeRaw = getCell("endTime") || cliffTimeRaw;
+    const milestoneIdxRaw = (getCell("milestoneIdx") || "0").trim();
 
     const rowIssues: string[] = [];
 
@@ -227,10 +227,7 @@ export function parseBulkCsv(
 
     const releaseType = parseReleaseType(releaseTypeValue);
     if (releaseType === null) {
-      rowIssues.push("releaseType must be Cliff, Linear, 0, or 1.");
-    }
-    if (releaseType === 2) {
-      rowIssues.push("Milestone rows are not available in bulk create yet.");
+      rowIssues.push("releaseType must be Cliff, Linear, Milestone, 0, 1, or 2.");
     }
 
     const startTime = parseTimestamp(startTimeRaw);
@@ -240,7 +237,7 @@ export function parseBulkCsv(
       startTime,
       cliffTime,
       endTime,
-      releaseType === 0 || releaseType === 1 ? releaseType : 1,
+      releaseType ?? 1,
     );
     if (scheduleError) rowIssues.push(scheduleError);
 
@@ -250,10 +247,14 @@ export function parseBulkCsv(
         rowIssues.push("milestoneIdx must be an integer.");
       } else {
         milestoneIdx = Number(milestoneIdxRaw);
+        if (milestoneIdx > 255) rowIssues.push("milestoneIdx must be 0–255.");
       }
     }
-    if (milestoneIdx !== 0) {
+    if (releaseType !== 2 && milestoneIdx !== 0) {
       rowIssues.push("milestoneIdx must be 0 for cliff and linear rows.");
+    }
+    if (releaseType === 2 && milestoneIdx === 0 && !milestoneIdxRaw) {
+      rowIssues.push("milestoneIdx is required for milestone rows.");
     }
 
     if (rowIssues.length > 0) {
@@ -271,11 +272,11 @@ export function parseBulkCsv(
       beneficiary,
       amountInput,
       amountRaw,
-      releaseType: releaseType as 0 | 1,
+      releaseType: releaseType as 0 | 1 | 2,
       startTime,
       cliffTime,
       endTime,
-      milestoneIdx: 0,
+      milestoneIdx,
     });
   }
 
@@ -283,7 +284,20 @@ export function parseBulkCsv(
     issues.push(issue("header", "CSV must include at least one data row."));
   }
 
-  return { rows: parsedRows, issues };
+  // Check for duplicate beneficiaries (program limitation: 1 ClaimRecord per beneficiary per tree)
+  const beneficiaryCounts = new Map<string, number[]>();
+  for (const row of parsedRows) {
+    const existing = beneficiaryCounts.get(row.beneficiary) ?? [];
+    existing.push(row.rowNumber);
+    beneficiaryCounts.set(row.beneficiary, existing);
+  }
+  for (const [addr, rows] of beneficiaryCounts) {
+    if (rows.length > 1) {
+      issues.push(issue(rows[1], `Duplicate beneficiary ${addr.slice(0, 8)}… — each recipient can only appear once per campaign.`));
+    }
+  }
+
+  return { rows: issues.length > 0 ? [] : parsedRows, issues };
 }
 
 export function prepareBulkCampaign(rows: BulkCsvRow[]): PreparedBulkCampaign {
@@ -303,17 +317,19 @@ export function prepareBulkCampaign(rows: BulkCsvRow[]): PreparedBulkCampaign {
   let totalSupply = 0n;
   let cliffCount = 0;
   let linearCount = 0;
+  let milestoneCount = 0;
 
   const leaves = leavesForTree.map((leaf, index) => {
     totalSupply += leaf.amount;
     if (leaf.releaseType === 0) cliffCount += 1;
     if (leaf.releaseType === 1) linearCount += 1;
+    if (leaf.releaseType === 2) milestoneCount += 1;
 
     return {
       leafIndex: leaf.leafIndex,
       beneficiary: leaf.beneficiary,
       amount: leaf.amount.toString(),
-      releaseType: leaf.releaseType as 0 | 1,
+      releaseType: leaf.releaseType as 0 | 1 | 2,
       startTime: leaf.startTs.toString(),
       cliffTime: leaf.cliffTs.toString(),
       endTime: leaf.endTs.toString(),
@@ -329,6 +345,7 @@ export function prepareBulkCampaign(rows: BulkCsvRow[]): PreparedBulkCampaign {
     releaseMix: {
       cliff: cliffCount,
       linear: linearCount,
+      milestone: milestoneCount,
     },
     leaves,
   };
@@ -366,5 +383,31 @@ export function bulkCsvTemplate(): string {
     BULK_CSV_HEADERS.join(","),
     "11111111111111111111111111111111,1000,Cliff,1735689600,1735776000,1735776000,0",
     "11111111111111111111111111111112,2500,Linear,1735689600,1735776000,1738368000,0",
+    "11111111111111111111111111111113,500,Milestone,1735689600,1735862400,1735862400,1",
+  ].join("\n");
+}
+
+export function bulkCsvTemplateForType(type: "cliff" | "linear" | "milestone"): string {
+  const header = BULK_CSV_HEADERS.join(",");
+  if (type === "cliff") {
+    return [
+      "beneficiary,amount,releaseType,startTime,cliffTime",
+      "RECIPIENT_ADDRESS_1,1000,Cliff,2025-06-01 09:00,2025-07-01 09:00",
+      "RECIPIENT_ADDRESS_2,2000,Cliff,2025-06-01 09:00,2025-08-01 09:00",
+    ].join("\n");
+  }
+  if (type === "linear") {
+    return [
+      header,
+      "RECIPIENT_ADDRESS_1,1000,Linear,2025-06-01 09:00,2025-06-01 09:00,2025-12-01 09:00,0",
+      "RECIPIENT_ADDRESS_2,2500,Linear,2025-06-01 09:00,2025-07-01 09:00,2026-06-01 09:00,0",
+    ].join("\n");
+  }
+  // milestone
+  return [
+    header,
+    "RECIPIENT_ADDRESS_1,500,Milestone,2025-06-01 09:00,2025-09-01 09:00,2025-09-01 09:00,0",
+    "RECIPIENT_ADDRESS_2,500,Milestone,2025-06-01 09:00,2025-12-01 09:00,2025-12-01 09:00,1",
+    "RECIPIENT_ADDRESS_3,500,Milestone,2025-06-01 09:00,2026-03-01 09:00,2026-03-01 09:00,2",
   ].join("\n");
 }

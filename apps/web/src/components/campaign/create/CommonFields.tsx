@@ -19,8 +19,8 @@ export function CommonFields({
   onAmountChange,
   beneficiary,
   onBeneficiaryChange,
-  campaignId,
-  onCampaignIdChange,
+  campaignId: _campaignId,
+  onCampaignIdChange: _onCampaignIdChange,
   cancellable,
   onCancellableChange,
   mintDecimals,
@@ -88,20 +88,6 @@ export function CommonFields({
       </div>
 
       <div className="space-y-3">
-        <Field
-          label="Campaign ID"
-          input={
-            <input
-              type="number"
-              min="1"
-              value={campaignId}
-              onChange={(e) => onCampaignIdChange(e.target.value)}
-              className={`${INPUT} ${formErrors.campaignId ? INPUT_ERR : ""}`}
-            />
-          }
-          error={formErrors.campaignId}
-          hint="Unique identifier for this vesting campaign"
-        />
         <ToggleCard
           checked={cancellable}
           onChange={onCancellableChange}

@@ -17,6 +17,7 @@ type Props = {
   totalSupply: bigint;
   totalClaimed: bigint;
   vestedAmount: bigint;
+  mintDecimals?: number | null;
 };
 
 export function CancelConfirmDialog({
@@ -34,8 +35,21 @@ export function CancelConfirmDialog({
   totalSupply,
   totalClaimed,
   vestedAmount,
+  mintDecimals,
 }: Props) {
   const [mode, setMode] = useState<"instant" | "grace">("instant");
+
+  if (!isOpen) return null;
+
+  function fmt(raw: bigint): string {
+    const dec = mintDecimals ?? (raw > 1_000_000_000n ? 9 : raw > 1_000_000n ? 6 : 0);
+    if (dec === 0) return raw.toLocaleString();
+    const divisor = 10n ** BigInt(dec);
+    const whole = raw / divisor;
+    const frac = raw % divisor;
+    const fracStr = frac.toString().padStart(dec, "0").slice(0, 4).replace(/0+$/, "");
+    return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
+  }
 
   if (!isOpen) return null;
 
@@ -99,15 +113,15 @@ export function CancelConfirmDialog({
             <div className="space-y-3 text-[13px]">
               <div className="flex justify-between">
                 <span className="text-[#8b92a5]">Already claimed</span>
-                <span className="font-medium text-white">{totalClaimed.toString()} tokens</span>
+                <span className="font-medium text-white">{fmt(totalClaimed)} tokens</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8b92a5]">Unclaimed vested (claimable by recipient)</span>
-                <span className="font-medium text-emerald-400">~{unclaimedVested.toString()} tokens</span>
+                <span className="font-medium text-emerald-400">~{fmt(unclaimedVested)} tokens</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8b92a5]">Unvested (recoverable after 7-day grace)</span>
-                <span className="font-medium text-amber-400">~{returnedToCreator.toString()} tokens</span>
+                <span className="font-medium text-amber-400">~{fmt(returnedToCreator)} tokens</span>
               </div>
             </div>
 
@@ -127,11 +141,11 @@ export function CancelConfirmDialog({
             <div className="space-y-3 text-[13px]">
               <div className="flex justify-between">
                 <span className="text-[#8b92a5]">To beneficiary (vested)</span>
-                <span className="font-medium text-emerald-400">~{(unclaimedVested + totalClaimed).toString()} tokens</span>
+                <span className="font-medium text-emerald-400">~{fmt(unclaimedVested + totalClaimed)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8b92a5]">Returned to you (unvested)</span>
-                <span className="font-medium text-amber-400">~{returnedToCreator.toString()} tokens</span>
+                <span className="font-medium text-amber-400">~{fmt(returnedToCreator)}</span>
               </div>
             </div>
 

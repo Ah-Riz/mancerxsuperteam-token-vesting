@@ -22,6 +22,7 @@ import { CloseClaimRecordButton } from "@/components/campaign/detail/CloseClaimR
 import { WithdrawUnvestedButton } from "@/components/campaign/detail/WithdrawUnvestedButton";
 import { ClaimWithProofButton } from "@/components/campaign/detail/ClaimWithProofButton";
 import { RootRotationCard } from "@/components/campaign/detail/RootRotationCard";
+import { VestingChart } from "@/components/campaign/detail/VestingChart";
 import { useToast } from "@/components/shell/Toast";
 import {
   getVestingTypeLabel,
@@ -130,12 +131,18 @@ function applyScheduleToForm(
     setCliffTime: (v: string) => void;
     setEndTime: (v: string) => void;
     setMilestoneIdx: (v: string) => void;
+    setRawStartTs?: (v: number | null) => void;
+    setRawCliffTs?: (v: number | null) => void;
+    setRawEndTs?: (v: number | null) => void;
   },
 ) {
   setters.setReleaseType(leaf.releaseType);
   setters.setStartTime(unixToDatetimeLocal(leaf.startTime));
   setters.setCliffTime(unixToDatetimeLocal(leaf.cliffTime));
   setters.setEndTime(unixToDatetimeLocal(leaf.endTime));
+  setters.setRawStartTs?.(leaf.startTime);
+  setters.setRawCliffTs?.(leaf.cliffTime);
+  setters.setRawEndTs?.(leaf.endTime);
   setters.setMilestoneIdx(String(leaf.milestoneIdx));
 }
 
@@ -170,6 +177,10 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const [cliffTime, setCliffTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [milestoneIdx, setMilestoneIdx] = useState("0");
+  // Raw unix timestamps for withdraw (avoids datetime-local second truncation)
+  const [rawStartTs, setRawStartTs] = useState<number | null>(null);
+  const [rawCliffTs, setRawCliffTs] = useState<number | null>(null);
+  const [rawEndTs, setRawEndTs] = useState<number | null>(null);
   const [scheduleSource, setScheduleSource] = useState<ScheduleSource>("none");
   const [showManualSchedule, setShowManualSchedule] = useState(false);
   const [expectedBeneficiary, setExpectedBeneficiary] = useState<string | null>(null);
@@ -196,17 +207,16 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     [treeAddress],
   );
   const proofBeneficiary = useMemo(() => {
-    if (!isSingleLeaf || !beneficiaryKey) return undefined;
-    if (
-      localSchedule?.beneficiary &&
-      localSchedule.beneficiary !== beneficiaryKey
-    ) {
-      return undefined;
+    if (!beneficiaryKey) return undefined;
+    if (isSingleLeaf) {
+      if (localSchedule?.beneficiary && localSchedule.beneficiary !== beneficiaryKey) {
+        return undefined;
+      }
     }
     return beneficiaryKey;
   }, [beneficiaryKey, isSingleLeaf, localSchedule]);
   const proofQuery = useProofLookup(
-    isSingleLeaf ? treeAddress : undefined,
+    treeAddress,
     proofBeneficiary,
   );
   const campaignDetailQuery = useCampaignDetail(treeAddress);
@@ -259,6 +269,21 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     fetchTree();
   }, [fetchTree]);
+
+  // Real-time: subscribe to on-chain account changes for auto-refresh
+  useEffect(() => {
+    if (!treeAddress) return;
+    let subId: number | undefined;
+    try {
+      const treePubkey = new PublicKey(treeAddress);
+      subId = connection.onAccountChange(treePubkey, () => {
+        fetchTree();
+      }, "confirmed");
+    } catch { /* invalid address, skip */ }
+    return () => {
+      if (subId !== undefined) connection.removeAccountChangeListener(subId);
+    };
+  }, [treeAddress, connection, fetchTree]);
 
   useEffect(() => {
     if (!treeMint) return;
@@ -321,8 +346,9 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   }
 
   useEffect(() => {
-    if (!isSingleLeaf || !publicKey) return;
+    if (!publicKey) return;
 
+    // API proof available — use it (works for both single and multi-leaf)
     if (proofQuery.data?.leaf) {
       applyScheduleToForm(proofQuery.data.leaf, {
         setReleaseType,
@@ -330,12 +356,16 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         setCliffTime,
         setEndTime,
         setMilestoneIdx,
+        setRawStartTs,
+        setRawCliffTs,
+        setRawEndTs,
       });
       setExpectedBeneficiary(proofQuery.data.leaf.beneficiary);
       setScheduleSource("api");
       return;
     }
 
+    // Fallback: localStorage or URL params (only if API didn't return data)
     if (
       scheduleSource !== "api" &&
       (proofQuery.isError || proofBeneficiary === undefined)
@@ -685,11 +715,17 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       const { getAssociatedTokenAddressSync } = await import("@solana/spl-token");
       const beneficiaryAta = getAssociatedTokenAddressSync(treeState.mint, publicKey);
 
-      const startTs = startTime
+      const startTs = rawStartTs !== null
+        ? new BN(rawStartTs)
+        : startTime
         ? new BN(datetimeLocalToUnix(startTime))
         : new BN(0);
-      const cliffTs = new BN(datetimeLocalToUnix(cliffTime));
-      const endTs = new BN(datetimeLocalToUnix(endTime));
+      const cliffTs = rawCliffTs !== null
+        ? new BN(rawCliffTs)
+        : new BN(datetimeLocalToUnix(cliffTime));
+      const endTs = rawEndTs !== null
+        ? new BN(rawEndTs)
+        : new BN(datetimeLocalToUnix(endTime));
 
       if (process.env.NODE_ENV === "development") {
         const { verifyVestedAmount } = await import("@/lib/vesting/verify-onchain");
@@ -891,6 +927,20 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             </div>
           )}
 
+          {/* Vesting Curve Chart */}
+          {cliffTime && endTime && (
+            <VestingChart
+              releaseType={releaseType}
+              startTs={datetimeLocalToUnix(startTime || cliffTime)}
+              cliffTs={datetimeLocalToUnix(cliffTime)}
+              endTs={datetimeLocalToUnix(endTime)}
+              totalAmount={totalSupply}
+              vestedAmount={vested}
+              cancelledAt={cancelledAtBigint ? Number(cancelledAtBigint) : null}
+              milestoneCount={isMilestone ? (treeState?.leafCount ?? 1) : undefined}
+            />
+          )}
+
           {isMilestone && (
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
               <SectionHeader
@@ -1089,6 +1139,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   mint={treeState.mint}
                   vault={treeState.vault}
                   vaultAuthority={treeState.vaultAuthority}
+                  mintDecimals={mintDecimals}
                   onSuccess={fetchTree}
                   toast={toast}
                 />
@@ -1138,7 +1189,11 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               )}
 
               {program && (
-                <PauseToggleButton
+                <>
+                  {treeState.pauseAuthority && treeState.creator && !treeState.pauseAuthority.equals(treeState.creator) && (
+                    <p className="text-[11px] text-amber-400/80">Pause authority differs from creator. Pausing blocks all claims.</p>
+                  )}
+                  <PauseToggleButton
                   program={program}
                   publicKey={publicKey}
                   treePubkey={new PublicKey(treeAddress)}
@@ -1164,6 +1219,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   }}
                   toast={toast}
                 />
+                </>
               )}
 
               {canShowCancel && (
@@ -1255,6 +1311,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         totalSupply={totalSupply}
         totalClaimed={totalClaimed}
         vestedAmount={vested}
+        mintDecimals={mintDecimals}
       />
     </div>
   );
