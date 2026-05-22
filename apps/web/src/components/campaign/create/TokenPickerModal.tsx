@@ -6,8 +6,6 @@ import { useWalletTokens } from "@/hooks/useWalletTokens";
 import { useTokenMetadata } from "@/hooks/useTokenMetadata";
 import { WrapSolModal } from "./WrapSolModal";
 
-const WSOL_MINT = "So11111111111111111111111111111111111111112";
-
 function shortenMint(addr: string) {
   return addr.length > 12 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
 }
@@ -109,16 +107,25 @@ export function TokenPickerModal({
             </div>
           )}
           {filteredPopular.map((token) => {
-            const isNativeSol = token.mint === WSOL_MINT && token.symbol === "SOL";
+            const isNativeSol = !!token.isNativeSol;
+            const isWsol = token.symbol === "wSOL";
             const walletMatch = walletTokens.find((w) => w.mintAddress === token.mint);
             const balance = walletMatch ? walletMatch.uiAmount : "–";
             return (
               <button
                 key={token.mint + token.symbol}
                 type="button"
-                onClick={() => handleTokenClick(token.mint, token.decimals, isNativeSol)}
+                onClick={() => {
+                  if (isNativeSol) {
+                    setShowWrapModal(true);
+                  } else if (isWsol && balance === "–") {
+                    setShowWrapModal(true);
+                  } else {
+                    handleTokenClick(token.mint, token.decimals);
+                  }
+                }}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                  selectedMint === token.mint ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
+                  selectedMint === token.mint && !isNativeSol ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
                 }`}
               >
                 {token.logoURI ? (
@@ -237,9 +244,10 @@ export function TokenPickerModal({
       <WrapSolModal
         isOpen={showWrapModal}
         onClose={() => setShowWrapModal(false)}
-        onSuccess={(mint, decimals) => {
-          onSelect(mint, decimals);
-          onClose();
+        onSuccess={() => {
+          setShowWrapModal(false);
+          // Refetch wallet tokens so wSOL balance updates
+          // Token picker stays open — user clicks wSOL row to select
         }}
       />
     </div>
