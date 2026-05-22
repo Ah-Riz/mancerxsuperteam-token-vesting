@@ -189,7 +189,6 @@ export function parseBulkCsv(
     "releaseType",
     "startTime",
     "cliffTime",
-    "endTime",
   ];
 
   for (const header of requiredHeaders) {
@@ -215,8 +214,8 @@ export function parseBulkCsv(
     const releaseTypeValue = getCell("releaseType");
     const startTimeRaw = getCell("startTime");
     const cliffTimeRaw = getCell("cliffTime");
-    const endTimeRaw = getCell("endTime");
-    const milestoneIdxRaw = getCell("milestoneIdx").trim();
+    const endTimeRaw = getCell("endTime") || cliffTimeRaw;
+    const milestoneIdxRaw = (getCell("milestoneIdx") || "0").trim();
 
     const rowIssues: string[] = [];
 
@@ -285,7 +284,20 @@ export function parseBulkCsv(
     issues.push(issue("header", "CSV must include at least one data row."));
   }
 
-  return { rows: parsedRows, issues };
+  // Check for duplicate beneficiaries (program limitation: 1 ClaimRecord per beneficiary per tree)
+  const beneficiaryCounts = new Map<string, number[]>();
+  for (const row of parsedRows) {
+    const existing = beneficiaryCounts.get(row.beneficiary) ?? [];
+    existing.push(row.rowNumber);
+    beneficiaryCounts.set(row.beneficiary, existing);
+  }
+  for (const [addr, rows] of beneficiaryCounts) {
+    if (rows.length > 1) {
+      issues.push(issue(rows[1], `Duplicate beneficiary ${addr.slice(0, 8)}… — each recipient can only appear once per campaign.`));
+    }
+  }
+
+  return { rows: issues.length > 0 ? [] : parsedRows, issues };
 }
 
 export function prepareBulkCampaign(rows: BulkCsvRow[]): PreparedBulkCampaign {
@@ -379,26 +391,23 @@ export function bulkCsvTemplateForType(type: "cliff" | "linear" | "milestone"): 
   const header = BULK_CSV_HEADERS.join(",");
   if (type === "cliff") {
     return [
-      header,
-      "# Cliff: beneficiary, amount, releaseType=Cliff, startTime, cliffTime (unlock date), endTime (= cliffTime), milestoneIdx=0",
-      "RECIPIENT_ADDRESS_1,1000,Cliff,1735689600,1735776000,1735776000,0",
-      "RECIPIENT_ADDRESS_2,2000,Cliff,1735689600,1735776000,1735776000,0",
+      "beneficiary,amount,releaseType,startTime,cliffTime",
+      "RECIPIENT_ADDRESS_1,1000,Cliff,2025-06-01 09:00,2025-07-01 09:00",
+      "RECIPIENT_ADDRESS_2,2000,Cliff,2025-06-01 09:00,2025-08-01 09:00",
     ].join("\n");
   }
   if (type === "linear") {
     return [
       header,
-      "# Linear: beneficiary, amount, releaseType=Linear, startTime, cliffTime (optional, same as start if none), endTime (full unlock), milestoneIdx=0",
-      "RECIPIENT_ADDRESS_1,1000,Linear,1735689600,1735689600,1738368000,0",
-      "RECIPIENT_ADDRESS_2,2500,Linear,1735689600,1735776000,1738368000,0",
+      "RECIPIENT_ADDRESS_1,1000,Linear,2025-06-01 09:00,2025-06-01 09:00,2025-12-01 09:00,0",
+      "RECIPIENT_ADDRESS_2,2500,Linear,2025-06-01 09:00,2025-07-01 09:00,2026-06-01 09:00,0",
     ].join("\n");
   }
   // milestone
   return [
     header,
-    "# Milestone: beneficiary, amount, releaseType=Milestone, startTime, cliffTime (= unlock date), endTime (= cliffTime), milestoneIdx (0-255)",
-    "RECIPIENT_ADDRESS_1,500,Milestone,1735689600,1735862400,1735862400,0",
-    "RECIPIENT_ADDRESS_2,500,Milestone,1735689600,1736035200,1736035200,1",
-    "RECIPIENT_ADDRESS_3,500,Milestone,1735689600,1736208000,1736208000,2",
+    "RECIPIENT_ADDRESS_1,500,Milestone,2025-06-01 09:00,2025-09-01 09:00,2025-09-01 09:00,0",
+    "RECIPIENT_ADDRESS_2,500,Milestone,2025-06-01 09:00,2025-12-01 09:00,2025-12-01 09:00,1",
+    "RECIPIENT_ADDRESS_3,500,Milestone,2025-06-01 09:00,2026-03-01 09:00,2026-03-01 09:00,2",
   ].join("\n");
 }

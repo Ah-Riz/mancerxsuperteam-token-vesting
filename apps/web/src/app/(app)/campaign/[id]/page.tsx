@@ -197,17 +197,16 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     [treeAddress],
   );
   const proofBeneficiary = useMemo(() => {
-    if (!isSingleLeaf || !beneficiaryKey) return undefined;
-    if (
-      localSchedule?.beneficiary &&
-      localSchedule.beneficiary !== beneficiaryKey
-    ) {
-      return undefined;
+    if (!beneficiaryKey) return undefined;
+    if (isSingleLeaf) {
+      if (localSchedule?.beneficiary && localSchedule.beneficiary !== beneficiaryKey) {
+        return undefined;
+      }
     }
     return beneficiaryKey;
   }, [beneficiaryKey, isSingleLeaf, localSchedule]);
   const proofQuery = useProofLookup(
-    isSingleLeaf ? treeAddress : undefined,
+    treeAddress,
     proofBeneficiary,
   );
   const campaignDetailQuery = useCampaignDetail(treeAddress);
@@ -322,8 +321,9 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   }
 
   useEffect(() => {
-    if (!isSingleLeaf || !publicKey) return;
+    if (!publicKey) return;
 
+    // API proof available — use it (works for both single and multi-leaf)
     if (proofQuery.data?.leaf) {
       applyScheduleToForm(proofQuery.data.leaf, {
         setReleaseType,
@@ -337,6 +337,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       return;
     }
 
+    // Fallback: localStorage or URL params (only if API didn't return data)
     if (
       scheduleSource !== "api" &&
       (proofQuery.isError || proofBeneficiary === undefined)
@@ -1104,6 +1105,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   mint={treeState.mint}
                   vault={treeState.vault}
                   vaultAuthority={treeState.vaultAuthority}
+                  mintDecimals={mintDecimals}
                   onSuccess={fetchTree}
                   toast={toast}
                 />
@@ -1270,6 +1272,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         totalSupply={totalSupply}
         totalClaimed={totalClaimed}
         vestedAmount={vested}
+        mintDecimals={mintDecimals}
       />
     </div>
   );

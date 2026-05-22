@@ -31,7 +31,7 @@ export default function globalSetup() {
 
   // Warn if pointing at Supabase (tests will truncate tables!)
   const dbUrl = process.env.DATABASE_URL;
-  if (dbUrl.includes("supabase.co") || dbUrl.includes("supabase.in")) {
+  if (dbUrl.includes("supabase.co") || dbUrl.includes("supabase.in") || dbUrl.includes("pooler") || dbUrl.includes("neon")) {
     console.warn(
       "\n⚠️  WARNING: DATABASE_URL points to Supabase. API tests that require DB " +
       "will skip destructive operations to protect your data.\n" +

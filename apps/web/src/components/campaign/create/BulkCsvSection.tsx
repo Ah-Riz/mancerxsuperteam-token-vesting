@@ -7,7 +7,6 @@ import {
   INPUT,
   SectionHeader,
   SummaryRow,
-  ToggleCard,
   formatIssueLabel,
   formatTokenAmount,
 } from "./shared";
@@ -49,16 +48,6 @@ export function BulkCsvSection({
 
   return (
     <div className="space-y-5">
-      <div className={`${CARD} space-y-4 p-5`}>
-        <SectionHeader title="Campaign Configuration" caption="Shared settings for all recipients in this campaign" />
-        <ToggleCard
-          checked={cancellable}
-          onChange={onCancellableChange}
-          title="Cancellable"
-          body="Creator can cancel and reclaim unvested tokens."
-        />
-      </div>
-
       <div className={`${CARD} space-y-4 p-5`}>
         <SectionHeader title="Recipients CSV" caption={
           vestingType === "cliff"
