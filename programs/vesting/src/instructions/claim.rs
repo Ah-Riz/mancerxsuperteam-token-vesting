@@ -5,9 +5,7 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 use crate::constants::MAX_MERKLE_PROOF_LEN;
 use crate::errors::VestingError;
 use crate::events::Claimed;
-use crate::math::merkle::leaf_hash;
-use crate::math::merkle::max_proof_len_for_leaf_count;
-use crate::math::merkle::verify_merkle_proof;
+use crate::math::merkle::{leaf_hash, max_proof_len_for_leaf_count, verify_merkle_proof};
 use crate::math::schedule;
 use crate::state::{milestone_flag_is_set, ClaimRecord, VestingLeaf, VestingTree};
 
@@ -45,9 +43,6 @@ pub struct Claim<'info> {
     #[account(mut, address = vesting_tree.vault @ VestingError::WrongVault)]
     pub vault: Account<'info, TokenAccount>,
 
-    #[account(address = vesting_tree.mint @ VestingError::MintMismatch)]
-    pub mint: Account<'info, Mint>,
-
     #[account(
         init_if_needed,
         payer = beneficiary,
@@ -55,6 +50,9 @@ pub struct Claim<'info> {
         associated_token::authority = beneficiary,
     )]
     pub beneficiary_ata: Account<'info, TokenAccount>,
+
+    #[account(address = vesting_tree.mint @ VestingError::MintMismatch)]
+    pub mint: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

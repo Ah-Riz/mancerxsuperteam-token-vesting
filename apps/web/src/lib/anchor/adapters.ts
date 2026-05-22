@@ -1,4 +1,5 @@
 import { BN } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
 
 /**
  * Converts the API's camelCase ProofLeaf into Anchor's snake_case VestingLeaf
@@ -15,14 +16,14 @@ export function toAnchorLeaf(apiLeaf: {
   milestoneIdx: number;
 }) {
   return {
-    leaf_index: apiLeaf.leafIndex,
-    beneficiary: apiLeaf.beneficiary,
+    leafIndex: apiLeaf.leafIndex,
+    beneficiary: new PublicKey(apiLeaf.beneficiary),
     amount: new BN(apiLeaf.amount),
-    release_type: apiLeaf.releaseType,
-    start_time: new BN(apiLeaf.startTime),
-    cliff_time: new BN(apiLeaf.cliffTime),
-    end_time: new BN(apiLeaf.endTime),
-    milestone_idx: apiLeaf.milestoneIdx,
+    releaseType: apiLeaf.releaseType,
+    startTime: new BN(apiLeaf.startTime),
+    cliffTime: new BN(apiLeaf.cliffTime),
+    endTime: new BN(apiLeaf.endTime),
+    milestoneIdx: apiLeaf.milestoneIdx,
   };
 }
 

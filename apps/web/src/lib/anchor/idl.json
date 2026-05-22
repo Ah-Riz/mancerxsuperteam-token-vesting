@@ -316,9 +316,6 @@
           "writable": true
         },
         {
-          "name": "mint"
-        },
-        {
           "name": "beneficiary_ata",
           "writable": true,
           "pda": {
@@ -407,6 +404,9 @@
               ]
             }
           }
+        },
+        {
+          "name": "mint"
         },
         {
           "name": "token_program",
@@ -1881,46 +1881,51 @@
     },
     {
       "code": 6025,
+      "name": "CampaignCompleted",
+      "msg": "Completed campaigns cannot be paused, unpaused, or cancelled"
+    },
+    {
+      "code": 6026,
       "name": "NotCancelled",
       "msg": "Campaign is not cancelled"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "GracePeriodActive",
       "msg": "Grace period after cancellation has not expired"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "CannotClose",
       "msg": "ClaimRecord cannot be closed yet (not fully claimed and grace period active)"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "NotSingleStream",
       "msg": "This instruction only works on single-recipient streams"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "ProofTooLong",
       "msg": "Merkle proof exceeds maximum allowed length for this campaign"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "FullyVested",
       "msg": "Campaign is fully vested; cannot cancel"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "StreamExpired",
       "msg": "Stream schedule has ended; nothing left to claim"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "MilestoneNotReleased",
       "msg": "Milestone has not been released by the creator"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "MilestoneAlreadyReleased",
       "msg": "Milestone has already been released"
     }

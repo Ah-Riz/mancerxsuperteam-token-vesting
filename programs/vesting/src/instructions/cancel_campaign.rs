@@ -24,6 +24,10 @@ pub struct CancelCampaign<'info> {
 
 pub fn handler(ctx: Context<CancelCampaign>) -> Result<()> {
     let tree = &mut ctx.accounts.vesting_tree;
+    require!(
+        tree.total_claimed < tree.total_supply,
+        VestingError::CampaignCompleted
+    );
     let cancelled_at = Clock::get()?.unix_timestamp;
     let claimed_at_cancel = tree.total_claimed;
 

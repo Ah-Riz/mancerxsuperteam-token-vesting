@@ -47,16 +47,15 @@ export async function GET(
       .select({
         uniqueClaimers: sql<number>`count(distinct ${claimEvents.beneficiary})::int`,
         claimCount: sql<number>`count(*)::int`,
-        totalClaimed: sql<string>`coalesce(sum(${claimEvents.amount}), 0)::text`,
       })
       .from(claimEvents)
       .where(eq(claimEvents.campaignId, campaign.id));
 
     const totalSupply = BigInt(campaign.totalSupply);
-    const claimedSum = BigInt(analytics.totalClaimed ?? "0");
+    const totalClaimed = BigInt(campaign.totalClaimed);
     const percentClaimed =
       totalSupply > 0n
-        ? Number((claimedSum * 10000n) / totalSupply) / 100
+        ? Number((totalClaimed * 10000n) / totalSupply) / 100
         : 0;
 
     return jsonResponse({

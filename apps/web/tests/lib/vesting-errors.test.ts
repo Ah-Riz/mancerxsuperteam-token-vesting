@@ -48,7 +48,7 @@ describe("formatVestingError", () => {
     expect(formatVestingError(new Error("FullyVested"))).toContain(
       "fully vested",
     );
-    expect(formatVestingError(new Error("0x178e"))).toContain("fully vested");
+    expect(formatVestingError(new Error("0x178f"))).toContain("fully vested");
   });
 
   it("maps MilestoneNotReleased", () => {
@@ -59,11 +59,11 @@ describe("formatVestingError", () => {
 
   it("maps StreamExpired", () => {
     expect(formatVestingError(new Error("StreamExpired"))).toContain("ended");
-    expect(formatVestingError(new Error("0x178f"))).toContain("ended");
+    expect(formatVestingError(new Error("0x1790"))).toContain("ended");
   });
 
   it("maps ProofTooLong", () => {
     expect(formatVestingError(new Error("ProofTooLong"))).toContain("too long");
-    expect(formatVestingError(new Error("0x178d"))).toContain("too long");
+    expect(formatVestingError(new Error("0x178e"))).toContain("too long");
   });
 });

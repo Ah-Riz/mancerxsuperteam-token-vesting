@@ -14,7 +14,10 @@ const RPC_ENDPOINT =
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   return (
-    <ConnectionProvider endpoint={RPC_ENDPOINT}>
+    <ConnectionProvider
+      endpoint={RPC_ENDPOINT}
+      config={{ commitment: "confirmed", disableRetryOnRateLimit: true }}
+    >
       <SolanaWalletProvider wallets={[]} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </SolanaWalletProvider>

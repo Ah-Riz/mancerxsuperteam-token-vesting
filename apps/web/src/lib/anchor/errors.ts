@@ -29,14 +29,16 @@ export const VESTING_ERROR_CODES = {
   AlreadyPaused: 6022,
   CampaignCancelled: 6023,
   NotPaused: 6024,
-  NotCancelled: 6025,
-  GracePeriodActive: 6026,
-  CannotClose: 6027,
-  NotSingleStream: 6028,
-  ProofTooLong: 6029,
-  FullyVested: 6030,
-  StreamExpired: 6031,
-  MilestoneNotReleased: 6032,
+  CampaignCompleted: 6025,
+  NotCancelled: 6026,
+  GracePeriodActive: 6027,
+  CannotClose: 6028,
+  NotSingleStream: 6029,
+  ProofTooLong: 6030,
+  FullyVested: 6031,
+  StreamExpired: 6032,
+  MilestoneNotReleased: 6033,
+  MilestoneAlreadyReleased: 6034,
 } as const;
 
 type ErrorKey = keyof typeof VESTING_ERROR_CODES;
@@ -68,6 +70,7 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
   AlreadyPaused: "Stream is already paused.",
   CampaignCancelled: "Stream is cancelled; this action is blocked.",
   NotPaused: "Stream is not paused.",
+  CampaignCompleted: "Stream is already fully claimed; this action is blocked.",
   NotCancelled: "Stream must be cancelled first.",
   GracePeriodActive: "Grace period is still active; unvested sweep not allowed yet.",
   CannotClose: "Claim record cannot be closed yet.",
@@ -77,6 +80,8 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
   StreamExpired: "This stream has ended; there is nothing left to claim.",
   MilestoneNotReleased:
     "This milestone has not been released yet. The creator must release it before you can claim.",
+  MilestoneAlreadyReleased:
+    "This milestone has already been released by the creator.",
 };
 
 function codeToHex(code: number): string {
@@ -113,7 +118,13 @@ export function formatVestingError(err: unknown): string {
   if (raw.includes("AccountNotInitialized")) {
     return "A required account is missing on-chain. The stream may not exist or was not funded.";
   }
-  if (raw.includes("InsufficientFunds") || /\b0x1\b/.test(raw)) {
+  if (raw.includes("InsufficientFunds")) {
+    return "Insufficient SOL for transaction fees. Try: solana airdrop 2 --url devnet";
+  }
+  if (/custom program error: 0x1\b/.test(raw)) {
+    return "Transaction failed: account already exists or insufficient funds. Try a different Campaign ID.";
+  }
+  if (/\b0x1\b/.test(raw) && !raw.includes("custom program error")) {
     return "Insufficient SOL for transaction fees. Try: solana airdrop 2 --url devnet";
   }
   if (raw.includes("User rejected")) {
@@ -131,6 +142,11 @@ export function formatVestingError(err: unknown): string {
 
   if (raw.includes("Failed to fetch") || raw.includes("NetworkError") || raw.includes("ECONNREFUSED")) {
     return "Network error. Check your connection and try again.";
+  }
+
+  // Avoid leaking internal details (RPC URLs, stack traces, account keys)
+  if (raw.length > 200 || raw.includes("at ") || raw.includes("http")) {
+    return "Transaction failed. Please try again.";
   }
 
   return raw;

@@ -17,6 +17,8 @@ export async function GET(
     const { treeAddress } = await params;
     const { searchParams } = new URL(request.url);
     const beneficiary = searchParams.get("beneficiary");
+    const leafIndexParam = searchParams.get("leafIndex");
+    const allParam = searchParams.get("all");
 
     if (!beneficiary) {
       return NextResponse.json(
@@ -54,8 +56,16 @@ export async function GET(
       );
     }
 
-    // Find leaf by beneficiary + root_version_id
-    const [leaf] = await db
+    // Find leaf by beneficiary + root_version_id (+ optional leafIndex)
+    const conditions = [
+      eq(leaves.beneficiary, beneficiary),
+      eq(leaves.rootVersionId, latestVersion.id),
+    ];
+    if (leafIndexParam !== null) {
+      conditions.push(eq(leaves.leafIndex, Number(leafIndexParam)));
+    }
+
+    const matchedLeaves = await db
       .select({
         leafIndex: leaves.leafIndex,
         beneficiary: leaves.beneficiary,
@@ -68,19 +78,36 @@ export async function GET(
         proof: leaves.proof,
       })
       .from(leaves)
-      .where(
-        and(
-          eq(leaves.beneficiary, beneficiary),
-          eq(leaves.rootVersionId, latestVersion.id),
-        ),
-      )
-      .limit(1);
+      .where(and(...conditions))
+      .limit(allParam === "true" ? 100 : 1);
 
-    if (!leaf) {
+    if (matchedLeaves.length === 0) {
       return NextResponse.json(
         { error: "No proof found for this beneficiary in this campaign" },
         { status: 404 },
       );
+    }
+
+    const leaf = matchedLeaves[0];
+
+    if (allParam === "true") {
+      return jsonResponse({
+        leaves: matchedLeaves.map((l) => ({
+          leaf: {
+            leafIndex: l.leafIndex,
+            beneficiary: l.beneficiary,
+            amount: l.amount,
+            releaseType: l.releaseType,
+            startTime: l.startTime,
+            cliffTime: l.cliffTime,
+            endTime: l.endTime,
+            milestoneIdx: l.milestoneIdx,
+          },
+          proof: l.proof,
+        })),
+        merkleRoot: campaign.merkleRoot,
+        treeAddress,
+      });
     }
 
     return jsonResponse({
