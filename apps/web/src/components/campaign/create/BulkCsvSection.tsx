@@ -12,14 +12,14 @@ import {
 } from "./shared";
 
 export function BulkCsvSection({
-  mintAddress,
-  onMintAddressChange,
+  mintAddress: _mintAddress,
+  onMintAddressChange: _onMintAddressChange,
   mintDecimals,
-  mintLoading,
-  campaignId,
-  onCampaignIdChange,
-  cancellable,
-  onCancellableChange,
+  mintLoading: _mintLoading,
+  campaignId: _campaignId,
+  onCampaignIdChange: _onCampaignIdChange,
+  cancellable: _cancellable,
+  onCancellableChange: _onCancellableChange,
   csvText,
   onCsvTextChange,
   onParse,

@@ -103,11 +103,9 @@ export function ClaimWithProofButton({
   const selected = leaves[selectedIdx] ?? leaves[0];
 
   // Determine which leaves are already claimed based on this beneficiary's ClaimRecord
-  let runningTotal = 0n;
-  const leafClaimedStatus = leaves.map((entry) => {
-    const amt = BigInt(entry.leaf.amount);
-    runningTotal += amt;
-    return runningTotal <= beneficiaryClaimedAmount;
+  const leafClaimedStatus = leaves.map((_, i) => {
+    const cumulative = leaves.slice(0, i + 1).reduce((sum, e) => sum + BigInt(e.leaf.amount), 0n);
+    return cumulative <= beneficiaryClaimedAmount;
   });
 
   async function handleClaim() {
