@@ -7,10 +7,8 @@ import { useToast } from "@/components/shell/Toast";
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (mint: string, decimals: number) => void;
+  onSuccess: () => void;
 };
-
-const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
   const { solBalance, wsolBalance, wrapSol, unwrapSol, isLoading, error, setError, fetchBalances } = useWrapSol();
@@ -32,12 +30,11 @@ export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
   useEffect(() => {
     if (!success) return;
     const timer = setTimeout(() => {
-      onSuccess(WSOL_MINT, 9);
-      onClose();
-      toast("wSOL is ready! Your stream will use wSOL.", "success");
+      onSuccess();
+      toast("wSOL is ready! Select it from the token list.", "success");
     }, 2000);
     return () => clearTimeout(timer);
-  }, [success, onSuccess, onClose, toast]);
+  }, [success, onSuccess, toast]);
 
   if (!isOpen) return null;
 
