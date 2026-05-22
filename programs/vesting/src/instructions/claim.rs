@@ -7,7 +7,7 @@ use crate::errors::VestingError;
 use crate::events::Claimed;
 use crate::math::merkle::{leaf_hash, max_proof_len_for_leaf_count, verify_merkle_proof};
 use crate::math::schedule;
-use crate::state::{ClaimRecord, VestingLeaf, VestingTree};
+use crate::state::{milestone_flag_is_set, ClaimRecord, VestingLeaf, VestingTree};
 
 #[derive(Accounts)]
 #[instruction(leaf: VestingLeaf, _proof: Vec<[u8; 32]>)]
@@ -119,14 +119,21 @@ pub fn handler(ctx: Context<Claim>, leaf: VestingLeaf, proof: Vec<[u8; 32]>) -> 
     };
 
     let claimable = if leaf.release_type == 2 {
-        if effective_now >= leaf.cliff_time {
-            leaf.amount
-        } else {
-            0
-        }
+        require!(
+            milestone_flag_is_set(&tree.milestone_released_flags, leaf.milestone_idx),
+            VestingError::MilestoneNotReleased
+        );
+        leaf.amount
     } else {
         schedule::vested(&leaf, effective_now).saturating_sub(cr.claimed_amount)
     };
+
+    if claimable == 0 && leaf.release_type != 2 {
+        let fully_claimed = cr.claimed_amount >= leaf.amount;
+        if effective_now >= leaf.end_time || fully_claimed {
+            return Err(VestingError::StreamExpired.into());
+        }
+    }
 
     require!(claimable > 0, VestingError::NothingToClaim);
     require!(
