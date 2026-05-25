@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback } from "react";
-import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
+import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram, Transaction } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useVestingProgram } from "@/hooks/useVestingProgram";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
@@ -18,6 +18,7 @@ import {
   indexCampaign,
   saveStreamScheduleLocal,
 } from "@/lib/stream/persist";
+import { buildWrapSolInstructions, solToLamports } from "@/lib/sol/auto-wrap";
 
 export interface CreateStreamParams {
   beneficiary: string;
@@ -31,6 +32,7 @@ export interface CreateStreamParams {
   endTime: number;
   milestoneIdx: number;
   cancellable: boolean;
+  autoWrap?: boolean;
 }
 
 export interface CreateStreamResult {
@@ -42,7 +44,8 @@ export interface CreateStreamResult {
 
 export function useCreateStream() {
   const program = useVestingProgram();
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
 
   const createStream = useCallback(
     async (params: CreateStreamParams): Promise<CreateStreamResult> => {
@@ -66,33 +69,77 @@ export function useCreateStream() {
       const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
       const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
 
-      const sig = await program.methods
-        .createStream({
-          campaignId: campaignIdBN,
-          beneficiary: beneficiaryKey,
-          amount: new BN(rawAmount),
-          releaseType: params.releaseType,
-          startTime: new BN(params.startTime),
-          cliffTime: new BN(params.cliffTime),
-          endTime: new BN(params.endTime),
-          milestoneIdx: params.milestoneIdx,
-          cancellable: params.cancellable,
-          cancelAuthority: params.cancellable ? publicKey : null,
-          pauseAuthority: publicKey,
-        })
-        .accounts({
-          creator: publicKey,
-          vestingTree,
-          vaultAuthority,
-          vault,
-          sourceAta,
-          mint: mintKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .rpc();
+      const needsWrap = params.autoWrap === true;
+
+      let sig: string;
+
+      if (needsWrap) {
+        const lamports = solToLamports(rawAmount, 0);
+        const wrapIxs = await buildWrapSolInstructions(connection, publicKey, lamports);
+
+        const createStreamIx = await program.methods
+          .createStream({
+            campaignId: campaignIdBN,
+            beneficiary: beneficiaryKey,
+            amount: new BN(rawAmount),
+            releaseType: params.releaseType,
+            startTime: new BN(params.startTime),
+            cliffTime: new BN(params.cliffTime),
+            endTime: new BN(params.endTime),
+            milestoneIdx: params.milestoneIdx,
+            cancellable: params.cancellable,
+            cancelAuthority: params.cancellable ? publicKey : null,
+            pauseAuthority: publicKey,
+          })
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vaultAuthority,
+            vault,
+            sourceAta,
+            mint: mintKey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .instruction();
+
+        const tx = new Transaction();
+        for (const ix of wrapIxs) tx.add(ix);
+        tx.add(createStreamIx);
+
+        sig = await sendTransaction(tx, connection);
+        await connection.confirmTransaction(sig, "confirmed");
+      } else {
+        sig = await program.methods
+          .createStream({
+            campaignId: campaignIdBN,
+            beneficiary: beneficiaryKey,
+            amount: new BN(rawAmount),
+            releaseType: params.releaseType,
+            startTime: new BN(params.startTime),
+            cliffTime: new BN(params.cliffTime),
+            endTime: new BN(params.endTime),
+            milestoneIdx: params.milestoneIdx,
+            cancellable: params.cancellable,
+            cancelAuthority: params.cancellable ? publicKey : null,
+            pauseAuthority: publicKey,
+          })
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vaultAuthority,
+            vault,
+            sourceAta,
+            mint: mintKey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .rpc();
+      }
 
       const treeAddress = vestingTree.toBase58();
 
@@ -150,7 +197,7 @@ export function useCreateStream() {
         indexWarning,
       };
     },
-    [program, publicKey],
+    [program, publicKey, connection, sendTransaction],
   );
 
   return { createStream, formatVestingError };

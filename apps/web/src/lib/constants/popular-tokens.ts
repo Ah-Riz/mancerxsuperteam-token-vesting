@@ -11,17 +11,10 @@ const MAINNET_TOKENS: PopularToken[] = [
   {
     mint: "So11111111111111111111111111111111111111112",
     symbol: "SOL",
-    name: "Native SOL · Wrap required",
+    name: "Solana · Auto-wrapped",
     decimals: 9,
     logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
     isNativeSol: true,
-  },
-  {
-    mint: "So11111111111111111111111111111111111111112",
-    symbol: "wSOL",
-    name: "Wrapped SOL",
-    decimals: 9,
-    logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
   },
   {
     mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -43,17 +36,10 @@ const DEVNET_TOKENS: PopularToken[] = [
   {
     mint: "So11111111111111111111111111111111111111112",
     symbol: "SOL",
-    name: "Native SOL · Wrap required",
+    name: "Solana · Auto-wrapped",
     decimals: 9,
     logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
     isNativeSol: true,
-  },
-  {
-    mint: "So11111111111111111111111111111111111111112",
-    symbol: "wSOL",
-    name: "Wrapped SOL",
-    decimals: 9,
-    logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
   },
   {
     mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",

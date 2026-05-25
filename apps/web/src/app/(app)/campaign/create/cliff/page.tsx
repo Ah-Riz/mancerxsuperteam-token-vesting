@@ -50,6 +50,7 @@ export default function CliffCreatePage() {
   const [mode, setMode] = useState<Mode>("single");
   const [mintAddress, setMintAddress] = useState("");
   const [mintDecimals, setMintDecimals] = useState<number | null>(null);
+  const [useAutoWrap, setUseAutoWrap] = useState(false);
   const [cancellable, setCancellable] = useState(false);
   const [baseCampaignId] = useState(() => Math.floor(Date.now() / 1000) % 1000000);
 
@@ -65,14 +66,17 @@ export default function CliffCreatePage() {
 
   // Derived
   const tokenInfo = POPULAR_TOKENS.find((t) => t.mint === mintAddress);
-  const tokenSymbol = tokenInfo?.symbol ?? (mintAddress ? mintAddress.slice(0, 4) : "");
-  const walletToken = walletTokens.find((t) => t.mintAddress === mintAddress);
+  const tokenSymbol = tokenInfo?.isNativeSol && !useAutoWrap ? "wSOL" : (tokenInfo?.symbol ?? (mintAddress ? mintAddress.slice(0, 4) : ""));
+  const walletToken = walletTokens.find((t) =>
+    t.mintAddress === mintAddress && (useAutoWrap ? t.isNativeSol === true : t.isNativeSol !== true)
+  ) ?? walletTokens.find((t) => t.mintAddress === mintAddress);
   const tokenBalance = walletToken?.uiAmount ?? null;
   const totalAmount = streams.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
 
-  function handleTokenSelect(mint: string, decimals: number) {
+  function handleTokenSelect(mint: string, decimals: number, autoWrap?: boolean) {
     setMintAddress(mint);
     setMintDecimals(decimals);
+    setUseAutoWrap(autoWrap ?? false);
   }
 
   function updateStream(id: string, field: keyof StreamEntry, value: string) {
@@ -123,7 +127,7 @@ export default function CliffCreatePage() {
         const result = await createStream({
           beneficiary: s.recipient, mintAddress, amount: s.amount, mintDecimals,
           campaignId: cid, releaseType: 0, startTime: startUnix, cliffTime: cliffUnix,
-          endTime: cliffUnix, milestoneIdx: 0, cancellable,
+          endTime: cliffUnix, milestoneIdx: 0, cancellable, autoWrap: useAutoWrap,
         });
         results.push(result);
       }
@@ -185,7 +189,7 @@ export default function CliffCreatePage() {
     const currentState = txState;
     setTxState({ type: "loading", label: "Funding vault..." });
     try {
-      const result = await fundCampaign({ mintAddress, treeAddress: currentState.treeAddress, totalSupply: currentState.totalSupply });
+      const result = await fundCampaign({ mintAddress, treeAddress: currentState.treeAddress, totalSupply: currentState.totalSupply, autoWrap: useAutoWrap });
       toast("Campaign funded!", "success");
       setTxState({ type: "bulk-funded", sig: result.sig, treeAddress: result.treeAddress, prepared: currentState.prepared });
     } catch (error: unknown) {
@@ -242,7 +246,7 @@ export default function CliffCreatePage() {
             {/* Token */}
             <div>
               <label className={LABEL}>Token</label>
-              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} error={undefined} />
+              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} autoWrap={useAutoWrap} error={undefined} />
             </div>
 
             {/* Cancellation */}

@@ -13,6 +13,7 @@ import { useClaimRecord } from "@/hooks/useClaimRecord";
 import { toAnchorLeaf } from "@/lib/anchor/adapters";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
+import { isNativeSol } from "@/lib/sol/auto-wrap";
 
 interface ProofLeaf {
   leafIndex: number;
@@ -144,7 +145,13 @@ export function ClaimWithProofButton({
         })
         .rpc();
 
-      toast("Tokens claimed successfully!", "success");
+      const isWsol = isNativeSol(mint);
+      toast(
+        isWsol
+          ? "wSOL claimed! Use Wrap/Unwrap to convert to SOL."
+          : "Tokens claimed successfully!",
+        "success",
+      );
       setMyClaimedAmount((prev) => prev + BigInt(selected.leaf.amount));
       // Sync claim event to DB with retry
       const syncClaim = async (retries = 3) => {

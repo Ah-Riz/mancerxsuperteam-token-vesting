@@ -7,13 +7,16 @@ import {
   getAssociatedTokenAddressSync,
   createSyncNativeInstruction,
   createCloseAccountInstruction,
+  createTransferInstruction,
+  createAssociatedTokenAccountInstruction,
   getAccount,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
+  Keypair,
   LAMPORTS_PER_SOL,
   SystemProgram,
   Transaction,
-  PublicKey,
 } from "@solana/web3.js";
 
 export function useWrapSol() {
@@ -108,9 +111,20 @@ export function useWrapSol() {
     [publicKey, sendTransaction, connection, solBalance, fetchBalances],
   );
 
-  const unwrapSol = useCallback(async (): Promise<boolean> => {
+  const unwrapSol = useCallback(async (amount?: number): Promise<boolean> => {
     if (!publicKey || !sendTransaction) {
       setError("Wallet not connected");
+      return false;
+    }
+
+    const isFullUnwrap = !amount || amount >= wsolBalance;
+
+    if (!isFullUnwrap && amount <= 0) {
+      setError("Amount must be greater than 0");
+      return false;
+    }
+    if (!isFullUnwrap && amount > wsolBalance) {
+      setError("Insufficient wSOL balance");
       return false;
     }
 
@@ -119,9 +133,44 @@ export function useWrapSol() {
 
     try {
       const ata = getAssociatedTokenAddressSync(NATIVE_MINT, publicKey);
-      const tx = new Transaction().add(
-        createCloseAccountInstruction(ata, publicKey, publicKey),
-      );
+      const tx = new Transaction();
+
+      if (isFullUnwrap) {
+        tx.add(createCloseAccountInstruction(ata, publicKey, publicKey));
+      } else {
+        const lamports = BigInt(Math.floor(amount * LAMPORTS_PER_SOL));
+        const tempKeypair = Keypair.generate();
+        const rentExempt = await connection.getMinimumBalanceForRentExemption(165);
+
+        tx.add(
+          SystemProgram.createAccount({
+            fromPubkey: publicKey,
+            newAccountPubkey: tempKeypair.publicKey,
+            lamports: rentExempt,
+            space: 165,
+            programId: TOKEN_PROGRAM_ID,
+          }),
+        );
+
+        const { createInitializeAccountInstruction } = await import("@solana/spl-token");
+        tx.add(
+          createInitializeAccountInstruction(tempKeypair.publicKey, NATIVE_MINT, publicKey),
+        );
+
+        tx.add(
+          createTransferInstruction(ata, tempKeypair.publicKey, publicKey, lamports),
+        );
+
+        tx.add(
+          createCloseAccountInstruction(tempKeypair.publicKey, publicKey, publicKey),
+        );
+
+        const sig = await sendTransaction(tx, connection, { signers: [tempKeypair] });
+        await connection.confirmTransaction(sig, "confirmed");
+        await fetchBalances();
+        setIsLoading(false);
+        return true;
+      }
 
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, "confirmed");
@@ -138,7 +187,7 @@ export function useWrapSol() {
       setIsLoading(false);
       return false;
     }
-  }, [publicKey, sendTransaction, connection, fetchBalances]);
+  }, [publicKey, sendTransaction, connection, fetchBalances, wsolBalance]);
 
   return { solBalance, wsolBalance, wrapSol, unwrapSol, isLoading, error, setError, fetchBalances };
 }

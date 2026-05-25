@@ -5,6 +5,8 @@ import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
+import { isNativeSol } from "@/lib/sol/auto-wrap";
+import { WrapSolModal } from "@/components/campaign/create/WrapSolModal";
 import { useVestingProgram } from "@/hooks/useVestingProgram";
 import { useProofLookup } from "@/hooks/useProofLookup";
 import { useClaimRecord } from "@/hooks/useClaimRecord";
@@ -199,6 +201,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const [cancelLoading, setCancelLoading] = useState(false);
   const [manualBeneficiary, setManualBeneficiary] = useState("");
   const treeMint = treeState?.mint;
+  const isWsolStream = treeMint ? isNativeSol(treeMint) : false;
+  const [wrapModalOpen, setWrapModalOpen] = useState(false);
 
   const isSingleLeaf = treeState?.leafCount === 1;
   const beneficiaryKey = publicKey?.toBase58();
@@ -764,7 +768,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         .rpc();
 
       setTxStatus({ type: "success", sig });
-      toast(`Claimed ${formatTokenAmount(claimable)} tokens successfully!`, "success");
+      const isWsol = isNativeSol(treeState.mint);
+      toast(
+        isWsol
+          ? `Claimed ${formatTokenAmount(claimable)} wSOL! Use Wrap/Unwrap to convert to SOL.`
+          : `Claimed ${formatTokenAmount(claimable)} tokens successfully!`,
+        "success",
+      );
       fetchTree();
       void campaignDetailQuery.refetch();
       void fetch("/api/claims/sync", {
@@ -1281,6 +1291,18 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                 <p className="text-[12px] font-medium text-emerald-400">Transaction submitted.</p>
                 <p className="mt-2 break-all font-mono text-[11px] text-[#8b92a5]">{txStatus.sig}</p>
+                {isWsolStream && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <span className="text-[12px] text-amber-300">Claimed tokens are in wSOL.</span>
+                    <button
+                      type="button"
+                      onClick={() => setWrapModalOpen(true)}
+                      className="rounded-md bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-300 transition hover:bg-amber-500/30"
+                    >
+                      Unwrap to SOL
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1312,6 +1334,15 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         totalClaimed={totalClaimed}
         vestedAmount={vested}
         mintDecimals={mintDecimals}
+      />
+
+      <WrapSolModal
+        isOpen={wrapModalOpen}
+        onClose={() => setWrapModalOpen(false)}
+        onSuccess={() => {
+          setWrapModalOpen(false);
+          toast("wSOL unwrapped to SOL!", "success");
+        }}
       />
     </div>
   );

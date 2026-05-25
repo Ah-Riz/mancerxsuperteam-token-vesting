@@ -7,8 +7,8 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram, Transaction } from "@solana/web3.js";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import {
   buildCreateCampaignIndexPayload,
   type PreparedBulkCampaign,
@@ -17,6 +17,7 @@ import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { indexCampaign, saveStreamScheduleLocal } from "@/lib/stream/persist";
 import { useVestingProgram } from "./useVestingProgram";
+import { buildWrapSolInstructions } from "@/lib/sol/auto-wrap";
 
 export interface CreateCampaignParams {
   mintAddress: string;
@@ -36,6 +37,7 @@ export interface FundCampaignParams {
   mintAddress: string;
   treeAddress: string;
   totalSupply: string;
+  autoWrap?: boolean;
 }
 
 export interface FundCampaignResult {
@@ -45,7 +47,8 @@ export interface FundCampaignResult {
 
 export function useCreateCampaign() {
   const program = useVestingProgram();
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
 
   const createCampaign = useCallback(
     async (params: CreateCampaignParams): Promise<CreateCampaignResult> => {
@@ -142,23 +145,48 @@ export function useCreateCampaign() {
       const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
       const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
 
-      const sig = await program.methods
-        .fundCampaign(new BN(params.totalSupply))
-        .accounts({
-          creator: publicKey,
-          vestingTree,
-          vault,
-          sourceAta,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+      let sig: string;
+
+      if (params.autoWrap === true) {
+        const lamports = Number(params.totalSupply);
+        const wrapIxs = await buildWrapSolInstructions(connection, publicKey, lamports);
+
+        const fundIx = await program.methods
+          .fundCampaign(new BN(params.totalSupply))
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vault,
+            sourceAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .instruction();
+
+        const tx = new Transaction();
+        for (const ix of wrapIxs) tx.add(ix);
+        tx.add(fundIx);
+
+        sig = await sendTransaction(tx, connection);
+        await connection.confirmTransaction(sig, "confirmed");
+      } else {
+        sig = await program.methods
+          .fundCampaign(new BN(params.totalSupply))
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vault,
+            sourceAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+      }
 
       return {
         sig,
         treeAddress: params.treeAddress,
       };
     },
-    [program, publicKey],
+    [program, publicKey, connection, sendTransaction],
   );
 
   return { createCampaign, fundCampaign, formatVestingError };

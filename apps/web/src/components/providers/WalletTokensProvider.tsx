@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { normalizeWalletTokens, type WalletTokenOption } from "@/lib/token/normalize";
 
@@ -35,10 +36,21 @@ export function WalletTokensProvider({ children }: { children: React.ReactNode }
     setError(null);
 
     try {
-      const response = await connection.getParsedTokenAccountsByOwner(publicKey, {
-        programId: TOKEN_PROGRAM_ID,
-      });
-      setTokens(normalizeWalletTokens(response.value));
+      const [response, solBalance] = await Promise.all([
+        connection.getParsedTokenAccountsByOwner(publicKey, { programId: TOKEN_PROGRAM_ID }),
+        connection.getBalance(publicKey),
+      ]);
+      const splTokens = normalizeWalletTokens(response.value);
+
+      const nativeSolEntry: WalletTokenOption = {
+        mintAddress: NATIVE_MINT.toBase58(),
+        balanceRaw: String(solBalance),
+        decimals: 9,
+        uiAmount: (solBalance / LAMPORTS_PER_SOL).toFixed(4),
+        isNativeSol: true,
+      };
+
+      setTokens([nativeSolEntry, ...splTokens]);
     } catch (err) {
       setTokens([]);
       setError(err instanceof Error ? err.message : "Failed to load wallet tokens.");
