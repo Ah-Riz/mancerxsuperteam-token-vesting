@@ -116,7 +116,7 @@
     LIMIT $2
     ```
   - Or: fetch from each table separately and merge-sort in code (cleaner with typed data)
-  - Wrap with `errorHandler(withLogger(rateLimit(handler, { requests: 60, window: 60 })))`
+  - Wrap with `withRoute({ rateLimit: { requests: 60, window: 60 } }, handler)`
   - Return `{ events: [...], total, campaign }`
 - [ ] **Verify:** Timeline for a campaign with claims + cancel returns events in chronological order
 
@@ -174,6 +174,21 @@
 - [ ] All tests pass in CI
 
 ---
+
+## Cursor Guardrails
+
+Before marking any task complete, verify:
+- [ ] Route uses `withRoute()` wrapper (not manual middleware chain)
+- [ ] All responses use `jsonResponse()` (not `NextResponse.json()`)
+- [ ] Request body validated with Zod schema where applicable
+- [ ] Event indexer wraps (insert event + update campaigns + update sync_state) in `db.transaction()`
+- [ ] State sync updates are transactional
+- [ ] No read-then-write outside transaction
+- [ ] No dead code — every new file is imported somewhere
+- [ ] Errors thrown as `AppError` subclasses
+- [ ] BigInt values are strings in all responses
+- [ ] New DB tables have RLS policies in migration
+- [ ] UNION ALL queries use parameterized values (no string interpolation in SQL)
 
 ## Verification checklist
 

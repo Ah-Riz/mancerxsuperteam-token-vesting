@@ -233,6 +233,27 @@ The BE checks campaign state (cancelled, paused, grace period) before building t
 
 ---
 
+## Cursor Guardrails
+
+Rules derived from P0/P1 implementation audit. Every route in this spec MUST follow these.
+
+### Route construction
+- **Use `withRoute()` wrapper** from `@/lib/api/route-wrapper`. Options: `{ auth: true, rateLimit: { requests: 10, window: 60 }, bodyLimit: "default" }`.
+- **Use `jsonResponse()` from `@/lib/api/json-response`** for ALL responses. Never `NextResponse.json()`.
+- **Zod-validated request body.** Define schemas in `validators.ts`. Use `.safeParse(body)`, never raw `request.json()`.
+
+### Transaction building
+- **The tx-builder utility must NOT do any DB writes.** It builds unsigned transactions only. Validation (checking campaign exists, state, auth) happens in the route handler before calling the builder.
+- **Grace period math MUST use BigInt.** `cancelledAt` is a u64 from DB. Compare with `BigInt(Math.floor(Date.now() / 1000))` to avoid Number precision loss.
+- **PDA derivation is deterministic.** No DB reads needed for PDA computation. Use `PublicKey.findProgramAddressSync()`.
+
+### Error handling
+- **Throw `AppError` subclasses** (NotFoundError, ValidationError, ForbiddenError). The `errorHandler` wrapper adds `requestId`, structured logging.
+- **Validation errors get 400 with details.** Auth mismatches get 403. Not found gets 404. State violations (grace active, not cancellable) get 400 with a clear `code` field.
+
+### BigInt
+- **All u64 values in responses are strings.** `jsonResponse()` handles this. Transaction serializations are base58 strings. Never expose raw BigInt.
+
 ## Out of scope
 
 - Automatic execution of cancel/withdraw (always wallet-signed)

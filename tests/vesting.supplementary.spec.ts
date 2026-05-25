@@ -4251,4 +4251,159 @@ describe("vesting supplementary T6-T25", () => {
     expect(Number(postCreator.amount) - creatorBefore).to.equal(0);
   });
 
+  // -------------------------------------------------------------------------
+  // T69: pause → cancel → claim during grace succeeds (exploit regression)
+  // -------------------------------------------------------------------------
+  it("T69: pause then cancel then claim during grace succeeds", async function () {
+    if (provider.connection.rpcEndpoint.includes("devnet")) {
+      this.skip();
+    }
+    const CAMPAIGN_ID = 980_001;
+    const AMOUNT = 10_000;
+    const beneficiary = await makeBeneficiary(provider);
+    const t = await createTimeHelpers(provider.connection);
+    const cliff = t.past(500);
+    const end = t.future(500);
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(cliff),
+      cliffTime: new BN(cliff),
+      endTime: new BN(end),
+      milestoneIdx: 0,
+    };
+
+    const { mint, tree, treePda, vaultAuthPda, vault } =
+      await createAndFundCampaign(
+        { provider, program, creator, cancelAuthority, pauseAuthority },
+        CAMPAIGN_ID,
+        [leaf],
+        AMOUNT,
+        true,
+      );
+
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const treeAfterCancel = await program.account.vestingTree.fetch(treePda);
+    expect(treeAfterCancel.paused).to.equal(false);
+    expect(treeAfterCancel.cancelledAt).to.not.be.null;
+
+    const cancelledAt = treeAfterCancel.cancelledAt as BN;
+    const expectedVested = await program.methods
+      .getVestedAmount(idlLeaf(leaf), cancelledAt, new BN(t.now), null)
+      .simulate()
+      .then((result: { raw?: string[] }) => {
+        const raw = result.raw ?? [];
+        const returnLine = raw.find((l) => l.startsWith("Program return:"));
+        if (!returnLine) {
+          throw new Error("getVestedAmount simulate returned no data");
+        }
+        const b64 = returnLine.split(" ").pop()!;
+        return new BN(Buffer.from(b64, "base64"), "le").toNumber();
+      });
+
+    const beneficiaryAta = getAssociatedTokenAddressSync(
+      mint,
+      beneficiary.publicKey,
+    );
+    const [crPda] = await claimRecordPDA(
+      PROGRAM_ID,
+      treePda,
+      beneficiary.publicKey,
+    );
+
+    await program.methods
+      .claim(idlLeaf(leaf), idlProof(tree.proof(0)))
+      .accounts({
+        beneficiary: beneficiary.publicKey,
+        vestingTree: treePda,
+        claimRecord: crPda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        beneficiaryAta,
+        mint,
+      })
+      .signers([beneficiary])
+      .rpc();
+
+    const postBeneficiary = await getAccount(provider.connection, beneficiaryAta);
+    expect(Number(postBeneficiary.amount)).to.equal(expectedVested);
+  });
+
+  // -------------------------------------------------------------------------
+  // T70: cancel on paused campaign resets paused=false
+  // -------------------------------------------------------------------------
+  it("T70: cancel on paused campaign resets paused to false", async function () {
+    if (provider.connection.rpcEndpoint.includes("devnet")) {
+      this.skip();
+    }
+    const CAMPAIGN_ID = 980_002;
+    const AMOUNT = 10_000;
+    const beneficiary = await makeBeneficiary(provider);
+    const t = await createTimeHelpers(provider.connection);
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(t.past(100)),
+      cliffTime: new BN(t.past(100)),
+      endTime: new BN(t.future(900)),
+      milestoneIdx: 0,
+    };
+
+    const { treePda } = await createAndFundCampaign(
+      { provider, program, creator, cancelAuthority, pauseAuthority },
+      CAMPAIGN_ID,
+      [leaf],
+      AMOUNT,
+      true,
+    );
+
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    const pausedTree = await program.account.vestingTree.fetch(treePda);
+    expect(pausedTree.paused).to.equal(true);
+
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const cancelledTree = await program.account.vestingTree.fetch(treePda);
+    expect(cancelledTree.paused).to.equal(false);
+    expect(cancelledTree.cancelledAt).to.not.be.null;
+  });
+
 });

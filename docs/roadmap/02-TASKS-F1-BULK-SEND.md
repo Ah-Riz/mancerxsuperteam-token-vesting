@@ -94,7 +94,7 @@
   - Compute `treeAddress` PDA: `derivePda(["tree", creator, mint, campaignId.toLeBytes()])`
   - Return response with all leaves + proofs + merkleRoot + leafCount + totalSupply
   - All BigInt values serialized as strings
-  - Wrap with `errorHandler(withLogger(rateLimit(requireAuth(handler))))` from P0
+  - Wrap with `withRoute({ auth: true, rateLimit: { requests: 10, window: 60 }, bodyLimit: "campaigns" }, handler)`
 - [ ] **Verify:** POST with 10 recipients returns tree with 10 leaves, valid root, and correct proofs for each leaf
 
 ## F1.6 — CSV import endpoint
@@ -126,6 +126,19 @@
 - [ ] All tests pass in CI
 
 ---
+
+## Cursor Guardrails
+
+Before marking any task complete, verify:
+- [ ] Route uses `withRoute()` wrapper (not manual middleware chain)
+- [ ] All responses use `jsonResponse()` (not `NextResponse.json()`)
+- [ ] Request body validated with Zod schema (not manual `request.json()` + type checks)
+- [ ] Multi-step DB writes wrapped in `db.transaction()`
+- [ ] No read-then-write outside transaction (SELECT then INSERT must be same tx)
+- [ ] No dead code — every new file is imported somewhere
+- [ ] Errors thrown as `AppError` subclasses (never raw `NextResponse.json()`)
+- [ ] BigInt values are strings in all responses (automatic with `jsonResponse()`)
+- [ ] New DB tables have RLS policies in migration
 
 ## Verification checklist
 

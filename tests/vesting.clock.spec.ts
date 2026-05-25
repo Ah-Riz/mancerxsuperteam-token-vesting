@@ -1371,4 +1371,134 @@ describe("vesting clock-dependent tests (bankrun)", () => {
       expectAnchorError(e, ERR.NothingToClaim);
     }
   });
+
+  it("pause at T1, cancel at T2, claim mid-grace, creator sweeps unvested after grace", async () => {
+    const { context, provider, program, creator, cancelAuthority, pauseAuthority } =
+      freshCtx();
+    const beneficiary = await makeBeneficiaryTx(provider);
+    const AMOUNT = 10_000;
+
+    const t0 = await bankrunNow(context);
+    const start = t0;
+    const end = t0 + 1000;
+    const t1 = t0 + 100;
+    const t2 = t0 + 500;
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(start),
+      cliffTime: new BN(start),
+      endTime: new BN(end),
+      milestoneIdx: 0,
+    };
+
+    const tree = new VestingMerkleTree([leaf]);
+    const { mint } = await createTestMintTx(provider, creator.publicKey);
+    await fundCreatorAtaTx(provider, mint, creator.publicKey, AMOUNT);
+
+    const [treePda] = await treePDA(PROGRAM_ID, creator.publicKey, mint, 908);
+    const [vaultAuthPda] = await vaultAuthorityPDA(PROGRAM_ID, treePda);
+    const vault = getAssociatedTokenAddressSync(mint, vaultAuthPda, true);
+    const beneficiaryAta = await createBeneficiaryAta(
+      provider,
+      mint,
+      beneficiary.publicKey,
+    );
+    const crPda = (await claimRecordPDA(PROGRAM_ID, treePda, beneficiary.publicKey))[0];
+    const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
+
+    await program.methods
+      .createCampaign({
+        campaignId: new BN(908),
+        merkleRoot: Array.from(tree.root),
+        leafCount: 1,
+        totalSupply: new BN(AMOUNT),
+        cancellable: true,
+        cancelAuthority: cancelAuthority.publicKey,
+        pauseAuthority: pauseAuthority.publicKey,
+      })
+      .accounts({
+        creator: creator.publicKey,
+        vestingTree: treePda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        mint,
+      })
+      .signers([creator])
+      .rpc();
+
+    await program.methods
+      .fundCampaign(new BN(AMOUNT))
+      .accounts({
+        creator: creator.publicKey,
+        vestingTree: treePda,
+        vault,
+        sourceAta: creatorAta,
+      })
+      .signers([creator])
+      .rpc();
+
+    await warpClock(context, t1);
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    await warpClock(context, t2);
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const treeAfterCancel = await program.account.vestingTree.fetch(treePda);
+    expect(treeAfterCancel.paused).to.equal(false);
+
+    await warpClock(context, t2 + 3 * 86400);
+    await program.methods
+      .claim(idlLeaf(leaf), idlProof(tree.proof(0)))
+      .accounts({
+        beneficiary: beneficiary.publicKey,
+        vestingTree: treePda,
+        claimRecord: crPda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        beneficiaryAta,
+        mint,
+      })
+      .signers([beneficiary])
+      .rpc();
+
+    const postBeneficiary = await getAccount(provider.connection, beneficiaryAta);
+    expect(Number(postBeneficiary.amount)).to.equal(5000);
+
+    const preCreator = Number((await getAccount(provider.connection, creatorAta)).amount);
+    await warpClock(context, t2 + GRACE_PERIOD_SECS + 100);
+    await program.methods
+      .withdrawUnvested()
+      .accounts({
+        creator: creator.publicKey,
+        vestingTree: treePda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        creatorAta,
+      })
+      .signers([creator])
+      .rpc();
+
+    const postCreator = Number((await getAccount(provider.connection, creatorAta)).amount);
+    expect(postCreator - preCreator).to.equal(5000);
+    const postVault = await getAccount(provider.connection, vault);
+    expect(Number(postVault.amount)).to.equal(0);
+  });
 });

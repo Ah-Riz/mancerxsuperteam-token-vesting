@@ -154,6 +154,19 @@
 
 ---
 
+## Cursor Guardrails
+
+Before marking any task complete, verify:
+- [ ] Route uses `withRoute()` wrapper with `auth: true`
+- [ ] All responses use `jsonResponse()` (not `NextResponse.json()`)
+- [ ] Request body validated with Zod schema (not manual parsing)
+- [ ] Grace period math uses BigInt (not Number) to avoid precision loss
+- [ ] No DB writes in tx-builder — it only constructs unsigned transactions
+- [ ] Errors thrown as `AppError` subclasses (NotFoundError, ValidationError, ForbiddenError)
+- [ ] BigInt values are strings in all responses
+- [ ] Auth signer identity verified against campaign's authority fields
+- [ ] PDA derivations use `PublicKey.findProgramAddressSync()` — no DB lookups
+
 ## Verification checklist
 
 - [ ] `pnpm test` passes in `apps/web/` (existing + new tests)

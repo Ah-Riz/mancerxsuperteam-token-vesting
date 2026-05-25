@@ -186,6 +186,26 @@ This prevents Token-2022 mints from being used, avoiding silent transfer fee iss
 
 ---
 
+## Cursor Guardrails
+
+Rules derived from P0/P1 implementation audit. Every route in this spec MUST follow these.
+
+### Route construction
+- **Use `withRoute()` wrapper** from `@/lib/api/route-wrapper`. Never construct middleware manually.
+- **Use `jsonResponse()` from `@/lib/api/json-response`** for ALL responses. Never `NextResponse.json()`.
+- **Zod-validated request body** on `POST /api/simulate-vesting`. Never raw `request.json()`.
+
+### Pure computation endpoints
+- **Simulation endpoint does NO DB writes.** Pure math only. Read-only. No transaction needed.
+- **Template endpoint is static JSON.** No DB, no computation. Just `jsonResponse(templates)`.
+- **Both are public GET/POST with rate limits.** No auth needed.
+
+### Error handling
+- **Throw `AppError` subclasses.** The `errorHandler` wrapper handles the rest.
+
+### BigInt
+- **All amounts and timestamps in responses are strings.** `jsonResponse()` handles this automatically.
+
 ## Out of scope
 
 - DeFi composability (Phase 2)

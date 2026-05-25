@@ -334,6 +334,29 @@ After indexing events, the sync reads the `VestingTree` account directly via `co
 
 ---
 
+## Cursor Guardrails
+
+Rules derived from P0/P1 implementation audit. Every route and indexer module MUST follow these.
+
+### Route construction
+- **Use `withRoute()` wrapper** from `@/lib/api/route-wrapper`. Never construct middleware manually.
+- **Use `jsonResponse()` from `@/lib/api/json-response`** for ALL responses. Never use `NextResponse.json()`.
+- **Zod-validated request body** on all mutation endpoints. Never use raw `request.json()` + manual type checks.
+
+### Database writes (critical for indexer)
+- **Multi-step writes MUST use `db.transaction()`.** The event indexer inserts into an event table AND updates `campaigns` AND updates `sync_state` — all three MUST be in a single transaction. If any step fails, ALL roll back. No partial state.
+- **State sync writes MUST also be transactional.** Updating `campaigns` columns from on-chain data must be atomic.
+- **Read-then-write MUST be inside the transaction.** If the indexer reads `last_synced_slot` from `sync_state`, then processes events, then writes the new slot — the slot read and write must be in the same transaction block.
+
+### Migrations
+- **Every new table gets RLS policies.** Add `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `CREATE POLICY "Public read ..."` for SELECT in the migration file. Write operations use the service_role key which bypasses RLS.
+
+### Error handling
+- **Throw `AppError` subclasses.** Never return raw error responses. The `errorHandler` wrapper provides `requestId`, structured logging, and BigInt-safe serialization.
+
+### BigInt
+- **All u64 values in responses are strings.** `jsonResponse()` handles this. Never use `JSON.stringify` or `NextResponse.json()` directly.
+
 ## Out of scope
 
 - WebSocket real-time push (polling via cron is sufficient for MVP)

@@ -236,6 +236,31 @@ All amounts in API are strings (not numbers) to avoid JavaScript Number precisio
 
 ---
 
+## Cursor Guardrails
+
+Rules derived from P0/P1 implementation audit. Every route in this spec MUST follow these.
+
+### Route construction
+- **Use `withRoute()` wrapper** from `@/lib/api/route-wrapper`. Never construct middleware chains manually.
+- **Use `jsonResponse()` from `@/lib/api/json-response`** for ALL responses. Never use `NextResponse.json()` — it skips BigInt serialization and will throw `TypeError` on u64 values.
+- **Use `withRoute({ auth: true, rateLimit: {...}, bodyLimit: "..." })`** options. Never call `requireAuth()` or `checkBodySize()` directly.
+- **Zod-validated request body.** Always use a schema from `validators.ts` with `.safeParse(body)`. Never use raw `request.json()` + manual type checks.
+
+### Database writes
+- **Multi-step writes MUST use `db.transaction()`.** If you INSERT into table A then UPDATE table B, wrap in a transaction. No exceptions.
+- **Read-then-write patterns MUST be inside the transaction.** If you SELECT max(x) then INSERT with x+1, both must be in the same `db.transaction()` to prevent race conditions.
+
+### No dead code
+- **Every new file must be imported by at least one route or test.** If you create a utility, it must be used. Unused modules get deleted in review.
+- **Don't duplicate existing functionality.** Check `lib/api/` for existing helpers before creating new ones. BigInt serialization is handled by `jsonResponse` — don't create a separate serialize module.
+
+### Error handling
+- **Throw `AppError` subclasses** (ValidationError, NotFoundError, etc.). Never return `NextResponse.json({ error: ... })` directly — the `errorHandler` wrapper catches thrown errors and adds `requestId`, `code`, structured logging.
+- **Use `ConflictError` (409)** for duplicate entries, not raw 409 responses.
+
+### BigInt
+- **All u64 values in responses are strings.** `jsonResponse()` handles this automatically. Never use `JSON.stringify` or `NextResponse.json()` directly.
+
 ## Out of scope
 
 - On-chain transaction building for `create_campaign` (FE handles via wallet adapter)

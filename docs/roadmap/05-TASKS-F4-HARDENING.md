@@ -188,6 +188,19 @@
 
 ---
 
+## Cursor Guardrails
+
+Before marking any task complete, verify:
+- [ ] Route uses `withRoute()` wrapper (not manual middleware chain)
+- [ ] All responses use `jsonResponse()` (not `NextResponse.json()`)
+- [ ] Request body validated with Zod schema on simulation endpoint
+- [ ] No dead code — every new file is imported somewhere
+- [ ] Errors thrown as `AppError` subclasses
+- [ ] BigInt values are strings in all responses
+- [ ] Sentry wrapper integrates with existing `errorHandler` (not replacing it)
+- [ ] Version middleware is additive (adds header, doesn't change response body)
+- [ ] SC changes pass all existing 86 tests + new Token-2022 test
+
 ## Verification checklist
 
 ### Part A (Vesting UX)
