@@ -1,33 +1,26 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonResponse } from "@/lib/api/json-response";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, rootVersions, claimEvents } from "@/lib/db/schema";
+import { NotFoundError } from "@/lib/api/errors";
+import { withRoute } from "@/lib/api/route-wrapper";
 
-// ---------------------------------------------------------------------------
-// GET /api/campaigns/:treeAddress — campaign detail with analytics
-// ---------------------------------------------------------------------------
-
-export async function GET(
-  request: NextRequest,
+async function getCampaignByAddressHandler(
+  _request: NextRequest,
   { params }: { params: Promise<{ treeAddress: string }> },
 ) {
-  try {
-    const { treeAddress } = await params;
+  const { treeAddress } = await params;
 
-    // Find campaign
-    const [campaign] = await db
-      .select()
-      .from(campaigns)
-      .where(eq(campaigns.treeAddress, treeAddress))
-      .limit(1);
+  const [campaign] = await db
+    .select()
+    .from(campaigns)
+    .where(eq(campaigns.treeAddress, treeAddress))
+    .limit(1);
 
-    if (!campaign) {
-      return NextResponse.json(
-        { error: "Campaign not found" },
-        { status: 404 },
-      );
-    }
+  if (!campaign) {
+    throw new NotFoundError("Campaign");
+  }
 
     // Fetch root versions for this campaign
     const rootVersionList = await db
@@ -58,33 +51,31 @@ export async function GET(
         ? Number((totalClaimed * 10000n) / totalSupply) / 100
         : 0;
 
-    return jsonResponse({
-      treeAddress: campaign.treeAddress,
-      creator: campaign.creator,
-      mint: campaign.mint,
-      campaignId: campaign.campaignId,
-      merkleRoot: campaign.merkleRoot,
-      leafCount: campaign.leafCount,
-      totalSupply: campaign.totalSupply,
-      totalClaimed: campaign.totalClaimed,
-      cancellable: campaign.cancellable,
-      paused: campaign.paused,
-      cancelledAt: campaign.cancelledAt,
-      createdAt: campaign.createdAt,
-      metadata: campaign.metadata,
-      analytics: {
-        uniqueClaimers: analytics.uniqueClaimers,
-        claimCount: analytics.claimCount,
-        percentClaimed,
-        rootVersionCount: rootVersionList.length,
-      },
-      rootVersions: rootVersionList,
-    });
-  } catch (error) {
-    console.error("[GET /api/campaigns/:treeAddress] Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
-  }
+  return jsonResponse({
+    treeAddress: campaign.treeAddress,
+    creator: campaign.creator,
+    mint: campaign.mint,
+    campaignId: campaign.campaignId,
+    merkleRoot: campaign.merkleRoot,
+    leafCount: campaign.leafCount,
+    totalSupply: campaign.totalSupply,
+    totalClaimed: campaign.totalClaimed,
+    cancellable: campaign.cancellable,
+    paused: campaign.paused,
+    cancelledAt: campaign.cancelledAt,
+    createdAt: campaign.createdAt,
+    metadata: campaign.metadata,
+    analytics: {
+      uniqueClaimers: analytics.uniqueClaimers,
+      claimCount: analytics.claimCount,
+      percentClaimed,
+      rootVersionCount: rootVersionList.length,
+    },
+    rootVersions: rootVersionList,
+  });
 }
+
+export const GET = withRoute(
+  { rateLimit: { requests: 60, window: 60 } },
+  getCampaignByAddressHandler,
+);

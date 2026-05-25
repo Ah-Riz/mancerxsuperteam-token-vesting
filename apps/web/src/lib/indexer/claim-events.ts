@@ -2,12 +2,15 @@ import crypto from "crypto";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { campaigns, claimEvents } from "@/lib/db/schema";
+import { campaigns, claimEvents, syncState } from "@/lib/db/schema";
 import { PROGRAM_ID } from "@/lib/anchor/client";
 
 export const CLAIMED_DISCRIMINATOR = Buffer.from(
   crypto.createHash("sha256").update("event:Claimed").digest().subarray(0, 8),
 );
+
+const LAST_SYNCED_SLOT_KEY = "last_synced_slot";
+const LAST_SYNC_TIMESTAMP_KEY = "last_sync_timestamp";
 
 interface ParsedClaimedEvent {
   tree: string;
@@ -67,14 +70,66 @@ export function extractAnchorEventData(logs: string[]): Buffer[] {
   return events;
 }
 
+export async function getLastSyncedSlot(): Promise<number> {
+  const [row] = await db
+    .select({ value: syncState.value })
+    .from(syncState)
+    .where(eq(syncState.key, LAST_SYNCED_SLOT_KEY))
+    .limit(1);
+
+  if (!row) return 0;
+  const parsed = Number(row.value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function persistSyncCheckpoint(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  slot: number,
+): Promise<void> {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+
+  await tx
+    .insert(syncState)
+    .values({
+      key: LAST_SYNCED_SLOT_KEY,
+      value: String(slot),
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: syncState.key,
+      set: {
+        value: String(slot),
+        updatedAt: now,
+      },
+    });
+
+  await tx
+    .insert(syncState)
+    .values({
+      key: LAST_SYNC_TIMESTAMP_KEY,
+      value: String(now),
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: syncState.key,
+      set: {
+        value: String(now),
+        updatedAt: now,
+      },
+    });
+}
+
 export async function syncClaimEvents(
   fromSlot?: number,
 ): Promise<{ processed: number; lastSlot: number }> {
   const rpcUrl = process.env.NEXT_PUBLIC_RPC_ENDPOINT;
   if (!rpcUrl) throw new Error("NEXT_PUBLIC_RPC_ENDPOINT is not set");
 
+  const startSlot =
+    fromSlot !== undefined ? fromSlot : await getLastSyncedSlot();
+
   const connection = new Connection(rpcUrl, "confirmed");
-  return syncClaimEventsWithConnection(connection, fromSlot);
+  return syncClaimEventsWithConnection(connection, startSlot);
 }
 
 async function processTransactions(params: {
@@ -110,30 +165,33 @@ async function processTransactions(params: {
         campaignId = campaign.id;
       }
 
-      await db.insert(claimEvents).values({
-        campaignId,
-        beneficiary: event.beneficiary,
-        leafIndex: event.leafIndex,
-        amount: BigInt(event.amount),
-        totalClaimedByUser: BigInt(event.totalClaimedByUser),
-        totalClaimedOverall: BigInt(event.totalClaimedOverall),
-        milestoneIdx: event.milestoneIdx,
-        signature,
-        slot: BigInt(slot),
-        blockTime: BigInt(tx.blockTime ?? Math.floor(Date.now() / 1000)),
-      }).onConflictDoNothing();
+      await db.transaction(async (txDb) => {
+        await txDb.insert(claimEvents).values({
+          campaignId,
+          beneficiary: event.beneficiary,
+          leafIndex: event.leafIndex,
+          amount: BigInt(event.amount),
+          totalClaimedByUser: BigInt(event.totalClaimedByUser),
+          totalClaimedOverall: BigInt(event.totalClaimedOverall),
+          milestoneIdx: event.milestoneIdx,
+          signature,
+          slot: BigInt(slot),
+          blockTime: BigInt(tx.blockTime ?? Math.floor(Date.now() / 1000)),
+        }).onConflictDoNothing();
 
-      await db
-        .update(campaigns)
-        .set({
-          totalClaimed: sql`GREATEST(${campaigns.totalClaimed}, ${event.totalClaimedOverall})`,
-        })
-        .where(eq(campaigns.id, campaignId));
+        await txDb
+          .update(campaigns)
+          .set({
+            totalClaimed: sql`GREATEST(${campaigns.totalClaimed}, ${event.totalClaimedOverall})`,
+          })
+          .where(eq(campaigns.id, campaignId));
+
+        await persistSyncCheckpoint(txDb, slot);
+      });
 
       processed++;
+      if (slot > lastSlot) lastSlot = slot;
     }
-
-    if (slot > lastSlot) lastSlot = slot;
   }
 
   return { processed, lastSlot };
@@ -157,7 +215,6 @@ async function syncClaimEventsWithConnection(
 
     if (pageSignatures.length === 0) break;
 
-    // Filter out signatures at or before fromSlot
     const validSigs = pageSignatures.filter((s) => !(fromSlot && s.slot <= fromSlot));
     if (validSigs.length === 0) break;
 
@@ -175,7 +232,6 @@ async function syncClaimEventsWithConnection(
       lastSlot = validSigs[validSigs.length - 1].slot;
     }
 
-    // Set before to oldest signature for next page
     before = pageSignatures[pageSignatures.length - 1].signature;
   } while (pageSignatures.length === 1000);
 

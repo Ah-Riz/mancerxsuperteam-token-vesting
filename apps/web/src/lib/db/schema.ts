@@ -153,6 +153,16 @@ export const waitlist = pgTable("waitlist", {
 });
 
 // ---------------------------------------------------------------------------
+// sync_state -- indexer checkpoint
+// ---------------------------------------------------------------------------
+
+export const syncState = pgTable("sync_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: bigint("updated_at", { mode: "bigint" }).notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Type exports for use in route handlers
 // ---------------------------------------------------------------------------
 

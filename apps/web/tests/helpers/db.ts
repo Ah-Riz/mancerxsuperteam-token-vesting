@@ -12,6 +12,6 @@ export async function resetDb(): Promise<void> {
     return;
   }
   await db.execute(
-    sql`TRUNCATE claim_events, leaves, root_versions, campaigns RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE claim_events, leaves, root_versions, campaigns, sync_state RESTART IDENTITY CASCADE`,
   );
 }

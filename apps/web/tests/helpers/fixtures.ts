@@ -10,12 +10,12 @@ import {
   makeLeaf,
   makeUrl,
 } from "./requests";
+import { createAuthHeader } from "./wallet-auth";
+import { resetRedisForTests } from "@/lib/api/redis";
 
 export function uniqueTreeAddress(): string {
   return Keypair.generate().publicKey.toBase58();
 }
-
-let nextOnChainCampaignId = 1;
 
 export async function createCampaignViaPost(
   overrides: Record<string, unknown> = {},
@@ -25,8 +25,7 @@ export async function createCampaignViaPost(
   status: number;
 }> {
   const treeAddress = (overrides.treeAddress as string) ?? uniqueTreeAddress();
-  const onChainCampaignId =
-    (overrides.campaignId as number | undefined) ?? nextOnChainCampaignId++;
+  const onChainCampaignId = overrides.campaignId as number | undefined;
   const leaf = makeLeaf(overrides.leaf as Record<string, unknown> | undefined);
   const leaves = (overrides.leaves as ReturnType<typeof makeLeaf>[] | undefined) ?? [
     leaf,
@@ -42,9 +41,12 @@ export async function createCampaignViaPost(
     ...overrides,
   });
 
+  resetRedisForTests();
+  const authorization = await createAuthHeader();
   const req = new NextRequest(makeUrl("/api/campaigns"), {
     method: "POST",
     body: JSON.stringify(body),
+    headers: { authorization },
   });
   const res = await postCampaigns(req);
   const json = (await res.json()) as { campaignId?: number; error?: string };
@@ -71,7 +73,9 @@ export async function seedClaimEvent(
     blockTime: number;
   }> = {},
 ): Promise<void> {
-  const sig = overrides.signature ?? `sig_${campaignId}_${Math.random()}`;
+  const sig =
+    overrides.signature ??
+    `sig_${campaignId}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   await db.insert(claimEvents).values({
     campaignId,
     beneficiary: overrides.beneficiary ?? "11111111111111111111111111111111",
