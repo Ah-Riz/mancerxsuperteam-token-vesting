@@ -135,7 +135,7 @@ function buildRecipientCampaign(
   };
 }
 
-async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+async function retry<T>(fn: () => Promise<T>, attempts = 2): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -145,7 +145,7 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
       lastError = error;
       if (attempt < attempts - 1) {
         await new Promise((resolve) => {
-          window.setTimeout(resolve, 150 * (attempt + 1));
+          window.setTimeout(resolve, 500 * (attempt + 1));
         });
       }
     }
@@ -195,8 +195,7 @@ export function useLocalCampaigns(address: string | undefined, refreshKey?: numb
       try {
         const addressKey = new PublicKey(currentAddress);
 
-        const results = await Promise.all(
-          localStreams.map(async ({ treeAddress, schedule, cachedCampaign }) => {
+        async function fetchOne({ treeAddress, schedule, cachedCampaign }: (typeof localStreams)[number]) {
             try {
               const treePubkey = new PublicKey(treeAddress);
               const account = (await retry(
@@ -309,10 +308,24 @@ export function useLocalCampaigns(address: string | undefined, refreshKey?: numb
                 ),
               };
             }
-          }),
-        );
+        }
 
-        if (cancelled) return;
+        const BATCH_SIZE = 2;
+        const results: (Awaited<ReturnType<typeof fetchOne>>)[] = [];
+        for (let i = 0; i < localStreams.length; i += BATCH_SIZE) {
+          if (cancelled) break;
+          const batch = localStreams.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(batch.map(fetchOne));
+          results.push(...batchResults);
+          if (i + BATCH_SIZE < localStreams.length) {
+            await new Promise((r) => setTimeout(r, 300));
+          }
+        }
+
+        if (cancelled) {
+          setState((prev) => ({ ...prev, isLoading: false }));
+          return;
+        }
 
         setState({
           senderCampaigns: results

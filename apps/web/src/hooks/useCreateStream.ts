@@ -18,7 +18,7 @@ import {
   indexCampaign,
   saveStreamScheduleLocal,
 } from "@/lib/stream/persist";
-import { buildWrapSolInstructions, solToLamports } from "@/lib/sol/auto-wrap";
+import { buildWrapSolInstructions, isNativeSol, solToLamports } from "@/lib/sol/auto-wrap";
 
 export interface CreateStreamParams {
   beneficiary: string;
@@ -53,6 +53,7 @@ export function useCreateStream() {
 
       const beneficiaryKey = new PublicKey(params.beneficiary);
       const mintKey = new PublicKey(params.mintAddress);
+      const nativeSol = isNativeSol(mintKey);
       const rawAmount =
         params.mintDecimals !== null
           ? toRawAmount(params.amount, params.mintDecimals)
@@ -69,28 +70,39 @@ export function useCreateStream() {
       const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
       const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
 
-      const needsWrap = params.autoWrap === true;
+      const needsWrap = params.autoWrap === true && !nativeSol;
+      const args = {
+        campaignId: campaignIdBN,
+        beneficiary: beneficiaryKey,
+        amount: new BN(rawAmount),
+        releaseType: params.releaseType,
+        startTime: new BN(params.startTime),
+        cliffTime: new BN(params.cliffTime),
+        endTime: new BN(params.endTime),
+        milestoneIdx: params.milestoneIdx,
+        cancellable: params.cancellable,
+        cancelAuthority: params.cancellable ? publicKey : null,
+        pauseAuthority: publicKey,
+      };
 
       let sig: string;
 
-      if (needsWrap) {
+      if (nativeSol) {
+        sig = await program.methods
+          .createStreamNative(args)
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .rpc();
+      } else if (needsWrap) {
         const lamports = solToLamports(rawAmount, 0);
         const wrapIxs = await buildWrapSolInstructions(connection, publicKey, lamports);
 
         const createStreamIx = await program.methods
-          .createStream({
-            campaignId: campaignIdBN,
-            beneficiary: beneficiaryKey,
-            amount: new BN(rawAmount),
-            releaseType: params.releaseType,
-            startTime: new BN(params.startTime),
-            cliffTime: new BN(params.cliffTime),
-            endTime: new BN(params.endTime),
-            milestoneIdx: params.milestoneIdx,
-            cancellable: params.cancellable,
-            cancelAuthority: params.cancellable ? publicKey : null,
-            pauseAuthority: publicKey,
-          })
+          .createStream(args)
           .accounts({
             creator: publicKey,
             vestingTree,
@@ -113,19 +125,7 @@ export function useCreateStream() {
         await connection.confirmTransaction(sig, "confirmed");
       } else {
         sig = await program.methods
-          .createStream({
-            campaignId: campaignIdBN,
-            beneficiary: beneficiaryKey,
-            amount: new BN(rawAmount),
-            releaseType: params.releaseType,
-            startTime: new BN(params.startTime),
-            cliffTime: new BN(params.cliffTime),
-            endTime: new BN(params.endTime),
-            milestoneIdx: params.milestoneIdx,
-            cancellable: params.cancellable,
-            cancelAuthority: params.cancellable ? publicKey : null,
-            pauseAuthority: publicKey,
-          })
+          .createStream(args)
           .accounts({
             creator: publicKey,
             vestingTree,

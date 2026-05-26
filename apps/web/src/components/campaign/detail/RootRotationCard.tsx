@@ -30,6 +30,24 @@ function truncateHash(value: string): string {
   return `${value.slice(0, 10)}...${value.slice(-8)}`;
 }
 
+function StepPill({
+  step,
+  title,
+  body,
+}: {
+  step: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-[#11161f] px-4 py-3">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-[#6f7c95]">{step}</p>
+      <p className="mt-2 text-[13px] font-medium text-white">{title}</p>
+      <p className="mt-1 text-[12px] leading-6 text-[#8b92a5]">{body}</p>
+    </div>
+  );
+}
+
 export function RootRotationCard({
   treeAddress,
   canRotate,
@@ -93,18 +111,26 @@ export function RootRotationCard({
   }
 
   const latestVersion = rootVersions[0]?.version ?? 0;
+  const nextVersion = (latestVersion || 1) + 1;
 
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-      <div className="space-y-1">
-        <h3 className="text-[15px] font-medium text-white">Root Rotation</h3>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-[15px] font-medium text-white">Update Allocations</h3>
+          <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-amber-300">
+            Advanced
+          </span>
+        </div>
         <p className="text-[13px] leading-6 text-[#8b92a5]">
-          Paste a prepared Merkle payload from the off-chain builder. This updates the on-chain root and
-          syncs the indexed leaves. Do not use a free-form root hex as the primary workflow.
+          Publish a new recipient payload for future claims.
+        </p>
+        <p className="text-[12px] leading-6 text-[#6f7c95]">
+          Technical name: <span className="font-medium text-white">Root Rotation</span>.
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-white/[0.06] bg-[#11161f] px-4 py-3">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[#6f7c95]">Current Root</p>
           <p className="mt-2 font-mono text-[12px] text-white">{truncateHash(currentMerkleRoot)}</p>
@@ -113,15 +139,32 @@ export function RootRotationCard({
           <p className="text-[11px] uppercase tracking-[0.18em] text-[#6f7c95]">Current Version</p>
           <p className="mt-2 text-[13px] text-white">v{latestVersion || 1} · {currentLeafCount} leaves</p>
         </div>
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300/80">After Update</p>
+          <p className="mt-2 text-[13px] text-white">Next indexed version: v{nextVersion}</p>
+        </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[12px] leading-6 text-amber-200">
-        Rotating the root changes future claim eligibility. If the payload is not synced with the indexer/API,
-        later proof lookups can fail even when the on-chain transaction succeeds.
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <StepPill
+          step="What Changes"
+          title="Future claim eligibility"
+          body="The new payload becomes the source of truth."
+        />
+        <StepPill
+          step="What Stays"
+          title="Already claimed tokens"
+          body="Already claimed tokens stay claimed."
+        />
+        <StepPill
+          step="Main Risk"
+          title="Old proofs stop working"
+          body="Recipients must refresh to the new proof data."
+        />
       </div>
 
       <label className="mt-4 block space-y-2">
-        <span className="text-[12px] font-medium text-[#8b92a5]">Prepared Root Payload (JSON)</span>
+        <span className="text-[12px] font-medium text-[#8b92a5]">Prepared Builder Payload (JSON)</span>
         <textarea
           value={payloadText}
           onChange={(e) => setPayloadText(e.target.value)}
@@ -130,13 +173,23 @@ export function RootRotationCard({
           className="w-full rounded-xl border border-white/[0.08] bg-[#11161f] px-4 py-3 font-mono text-[12px] text-white outline-none transition focus:border-white/20"
         />
       </label>
+      <p className="mt-2 text-[11px] leading-6 text-[#6f7c95]">
+        Paste the full builder payload, not just a root hash.
+      </p>
 
       {payloadText.trim() && !parsedPayload.ok && (
         <p className="mt-3 text-[12px] text-red-400">{parsedPayload.error}</p>
       )}
 
       {parsedPayload.ok && (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 space-y-3">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300/80">Ready To Publish</p>
+            <p className="mt-2 text-[12px] leading-6 text-emerald-100">
+              Payload looks valid. Review before publishing.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
           {formatRootRotationPreview(parsedPayload.payload).map((item) => (
             <div
               key={item.label}
@@ -146,19 +199,25 @@ export function RootRotationCard({
               <p className="mt-2 break-all font-mono text-[12px] text-white">{item.value}</p>
             </div>
           ))}
+          </div>
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="text-[12px] leading-6 text-[#8b92a5]">
-          Only the on-chain <span className="font-medium text-white">cancel authority</span> can rotate the root.
-        </p>
+      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <p className="text-[12px] leading-6 text-[#8b92a5]">
+            Only the on-chain <span className="font-medium text-white">cancel authority</span> can publish this.
+          </p>
+          <p className="text-[11px] leading-6 text-[#6f7c95]">
+            Publish only after the new payload is ready and indexed.
+          </p>
+        </div>
         <button
           onClick={handleRotate}
           disabled={loading || !parsedPayload.ok}
           className="rounded-xl border border-white/[0.08] bg-white px-4 py-2.5 text-[13px] font-medium text-[#0d1117] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? "Rotating..." : "Rotate Root"}
+          {loading ? "Publishing..." : "Publish Allocation Update"}
         </button>
       </div>
     </div>

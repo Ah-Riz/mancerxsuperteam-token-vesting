@@ -324,6 +324,9 @@
           "optional": true
         },
         {
+          "name": "mint"
+        },
+        {
           "name": "beneficiary_ata",
           "writable": true,
           "optional": true,

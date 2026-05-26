@@ -11,9 +11,19 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 
+export const NATIVE_SOL_MINT = SystemProgram.programId;
+export const NATIVE_SOL_MINT_ADDRESS = NATIVE_SOL_MINT.toBase58();
+export const WRAPPED_SOL_MINT = NATIVE_MINT;
+export const WRAPPED_SOL_MINT_ADDRESS = WRAPPED_SOL_MINT.toBase58();
+
 export function isNativeSol(mint: string | PublicKey): boolean {
   const key = typeof mint === "string" ? mint : mint.toBase58();
-  return key === NATIVE_MINT.toBase58();
+  return key === NATIVE_SOL_MINT_ADDRESS;
+}
+
+export function isWrappedSol(mint: string | PublicKey): boolean {
+  const key = typeof mint === "string" ? mint : mint.toBase58();
+  return key === WRAPPED_SOL_MINT_ADDRESS;
 }
 
 export async function buildWrapSolInstructions(

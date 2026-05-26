@@ -10,11 +10,19 @@ interface CampaignAnalytics {
 }
 
 interface RootVersion {
+  id: number;
   version: number;
   merkleRoot: string;
   leafCount: number;
   createdAt: number;
   ipfsCid: string | null;
+}
+
+interface CampaignRecipient {
+  beneficiary: string;
+  allocation: string;
+  leafCount: number;
+  claimedAmount: string;
 }
 
 interface CampaignDetail {
@@ -31,8 +39,10 @@ interface CampaignDetail {
   cancelledAt: number | null;
   createdAt: number;
   metadata: { name?: string; description?: string; logoUri?: string } | null;
+  hasMilestoneLeaves?: boolean;
   analytics: CampaignAnalytics;
   rootVersions: RootVersion[];
+  recipients: CampaignRecipient[];
 }
 
 export function useCampaignDetail(treeAddress: string | undefined) {

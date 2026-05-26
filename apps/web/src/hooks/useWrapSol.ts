@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import {
   NATIVE_MINT,
@@ -8,7 +8,6 @@ import {
   createSyncNativeInstruction,
   createCloseAccountInstruction,
   createTransferInstruction,
-  createAssociatedTokenAccountInstruction,
   getAccount,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -26,28 +25,46 @@ export function useWrapSol() {
   const [wsolBalance, setWsolBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchInFlightRef = useRef<Promise<void> | null>(null);
+  const lastFetchAtRef = useRef(0);
 
   const fetchBalances = useCallback(async () => {
     if (!publicKey) return;
-    try {
-      const sol = await connection.getBalance(publicKey);
-      setSolBalance(sol / LAMPORTS_PER_SOL);
+    const now = Date.now();
+    if (fetchInFlightRef.current) {
+      await fetchInFlightRef.current;
+      return;
+    }
+    if (now - lastFetchAtRef.current < 1500) {
+      return;
+    }
 
-      const ata = getAssociatedTokenAddressSync(NATIVE_MINT, publicKey);
+    const run = (async () => {
       try {
-        const account = await getAccount(connection, ata);
-        setWsolBalance(Number(account.amount) / LAMPORTS_PER_SOL);
+        const sol = await connection.getBalance(publicKey);
+        setSolBalance(sol / LAMPORTS_PER_SOL);
+
+        const ata = getAssociatedTokenAddressSync(NATIVE_MINT, publicKey);
+        try {
+          const account = await getAccount(connection, ata);
+          setWsolBalance(Number(account.amount) / LAMPORTS_PER_SOL);
+        } catch {
+          setWsolBalance(0);
+        }
       } catch {
-        setWsolBalance(0);
+        // ignore read-rate-limit / transient RPC errors here
+      } finally {
+        lastFetchAtRef.current = Date.now();
       }
-    } catch {
-      // ignore
+    })();
+
+    fetchInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      fetchInFlightRef.current = null;
     }
   }, [connection, publicKey]);
-
-  useEffect(() => {
-    fetchBalances();
-  }, [fetchBalances]);
 
   const wrapSol = useCallback(
     async (amount: number): Promise<boolean> => {

@@ -5,6 +5,7 @@ import { POPULAR_TOKENS } from "@/lib/constants/popular-tokens";
 import { useWalletTokens } from "@/hooks/useWalletTokens";
 import { useTokenMetadata } from "@/hooks/useTokenMetadata";
 import { useToast } from "@/components/shell/Toast";
+import { WRAPPED_SOL_MINT_ADDRESS } from "@/lib/sol/auto-wrap";
 import { WrapSolModal } from "./WrapSolModal";
 
 function shortenMint(addr: string) {
@@ -56,7 +57,7 @@ export function TokenPickerModal({
   const filteredPopular = POPULAR_TOKENS.filter(
     (t) => t.symbol.toLowerCase().includes(query) || t.name.toLowerCase().includes(query) || t.mint.includes(search.trim()),
   );
-  const nativeMint = "So11111111111111111111111111111111111111112";
+  const nativeMint = WRAPPED_SOL_MINT_ADDRESS;
   const wsolEntry = walletTokens.find(
     (t) => t.mintAddress === nativeMint && !t.isNativeSol && Number(t.uiAmount) > 0,
   );
@@ -67,10 +68,14 @@ export function TokenPickerModal({
       (t.mintAddress.includes(search.trim())),
   );
 
-  function getPopularBalance(token: { mint: string; symbol: string; isNativeSol?: boolean }): string {
+  function getPopularBalance(token: { mint: string; symbol: string; isNativeSol?: boolean; isWrappedSol?: boolean }): string {
     if (token.isNativeSol) {
       const nativeEntry = walletTokens.find((w) => w.isNativeSol);
       return nativeEntry && Number(nativeEntry.uiAmount) > 0 ? nativeEntry.uiAmount : "–";
+    }
+    if (token.isWrappedSol) {
+      const wrappedEntry = walletTokens.find((w) => w.mintAddress === token.mint && !w.isNativeSol);
+      return wrappedEntry && Number(wrappedEntry.uiAmount) > 0 ? wrappedEntry.uiAmount : "–";
     }
     const walletMatch = walletTokens.find((w) => w.mintAddress === token.mint && !w.isNativeSol);
     return walletMatch && Number(walletMatch.uiAmount) > 0 ? walletMatch.uiAmount : "–";
@@ -129,13 +134,12 @@ export function TokenPickerModal({
             </div>
           )}
           {filteredPopular.map((token) => {
-            const isNativeSol = !!token.isNativeSol;
             const balance = getPopularBalance(token);
             return (
               <button
                 key={token.mint + token.symbol}
                 type="button"
-                onClick={() => handleTokenClick(token.mint, token.decimals, token.isNativeSol ? true : undefined)}
+                onClick={() => handleTokenClick(token.mint, token.decimals, false)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                   selectedMint === token.mint ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
                 }`}
@@ -149,8 +153,11 @@ export function TokenPickerModal({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-medium text-white">{token.symbol}</span>
-                    {isNativeSol && (
-                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">Auto-wrap</span>
+                    {token.isNativeSol && (
+                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">Native</span>
+                    )}
+                    {token.isWrappedSol && (
+                      <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/60">Wrapped</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">

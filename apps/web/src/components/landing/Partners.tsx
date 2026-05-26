@@ -1,12 +1,26 @@
 import Image from "next/image";
 
 const partners = [
-  { name: "Solana", src: "/assets/partners/solana.png", boxed: false },
-  { name: "Superteam Indonesia", src: "/assets/partners/superteam.png", boxed: true },
-  { name: "Mancer", src: "/assets/partners/mancer.png", boxed: false },
+  { name: "Solana", src: "/assets/partners/solana.png", boxed: false, width: 130, height: 56 },
+  { name: "Superteam Indonesia", src: "/assets/partners/superteam.png", boxed: true, width: 56, height: 56 },
+  { name: "Mancer", src: "/assets/partners/mancer.png", boxed: false, width: 202, height: 56 },
 ];
 
-function PartnerItem({ name, src, boxed, hidden }: { name: string; src: string; boxed: boolean; hidden?: boolean }) {
+function PartnerItem({
+  name,
+  src,
+  boxed,
+  width,
+  height,
+  hidden,
+}: {
+  name: string;
+  src: string;
+  boxed: boolean;
+  width: number;
+  height: number;
+  hidden?: boolean;
+}) {
   return (
     <a
       className={`lp-partner-item${boxed ? " boxed" : ""}`}
@@ -15,7 +29,12 @@ function PartnerItem({ name, src, boxed, hidden }: { name: string; src: string; 
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : undefined}
     >
-      <Image src={src} alt={hidden ? "" : name} width={boxed ? 56 : 120} height={56} />
+      <Image
+        src={src}
+        alt={hidden ? "" : name}
+        width={width}
+        height={height}
+      />
     </a>
   );
 }

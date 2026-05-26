@@ -13,6 +13,8 @@ type Props = {
   title: string;
   amountLabel: string;
   amountDisplay: string;
+  secondaryAmountLabel?: string;
+  secondaryAmountDisplay?: string | null;
   claimableDisplay?: string | null;
   counterpartyLabel: string;
   counterpartyValue: string;
@@ -30,6 +32,8 @@ export function CampaignRow({
   title,
   amountLabel,
   amountDisplay,
+  secondaryAmountLabel,
+  secondaryAmountDisplay,
   claimableDisplay,
   counterpartyLabel,
   counterpartyValue,
@@ -39,6 +43,15 @@ export function CampaignRow({
   createdAtLabel,
 }: Props) {
   const hasClaimable = claimableDisplay !== null && claimableDisplay !== undefined;
+  const hasSecondaryAmount =
+    secondaryAmountLabel !== undefined &&
+    secondaryAmountDisplay !== null &&
+    secondaryAmountDisplay !== undefined;
+  const columnClass = hasClaimable && hasSecondaryAmount
+    ? "xl:grid-cols-6"
+    : hasClaimable || hasSecondaryAmount
+      ? "xl:grid-cols-5"
+      : "xl:grid-cols-4";
 
   return (
     <Link
@@ -60,9 +73,12 @@ export function CampaignRow({
             <p className="mt-1 font-mono text-[12px] text-[#8b92a5]">{treeAddress}</p>
           </div>
 
-          <div className={`grid gap-4 sm:grid-cols-2 ${hasClaimable ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
-            <InfoBlock label={amountLabel} value={amountDisplay} />
-            {hasClaimable ? <InfoBlock label="Claimable Now" value={claimableDisplay} /> : null}
+          <div className={`grid gap-x-6 gap-y-4 border-t border-white/[0.06] pt-4 sm:grid-cols-2 ${columnClass}`}>
+            <InfoBlock label={amountLabel} value={amountDisplay} tone="primary" />
+            {hasSecondaryAmount ? (
+              <InfoBlock label={secondaryAmountLabel} value={secondaryAmountDisplay} />
+            ) : null}
+            {hasClaimable ? <InfoBlock label="Claimable Now" value={claimableDisplay} tone="accent" /> : null}
             <InfoBlock label={counterpartyLabel} value={counterpartyValue} />
             <InfoBlock label="Mint" value={mintValue} mono />
             <InfoBlock label={nextLabel} value={nextValue} />
@@ -82,15 +98,32 @@ function InfoBlock({
   label,
   value,
   mono,
+  tone,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  tone?: "default" | "primary" | "accent";
 }) {
+  const toneClass =
+    tone === "primary"
+      ? "text-white"
+      : tone === "accent"
+        ? "text-emerald-300"
+        : "text-white";
+  const valueClass =
+    tone === "primary"
+      ? "text-[15px] font-semibold"
+      : tone === "accent"
+        ? "text-[15px] font-semibold"
+        : "text-[13px] font-medium";
+
   return (
-    <div>
-      <p className="text-[11px] uppercase tracking-[0.12em] text-[#6f7c95]">{label}</p>
-      <p className={`mt-1 text-[13px] text-white ${mono ? "font-mono" : ""}`}>{value}</p>
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[#6f7c95]">{label}</p>
+      <p className={`mt-1.5 truncate ${valueClass} ${toneClass} ${mono ? "font-mono" : ""}`} title={value}>
+        {value}
+      </p>
     </div>
   );
 }

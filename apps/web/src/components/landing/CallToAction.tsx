@@ -16,8 +16,8 @@ export function CallToAction() {
               waitlist to be first in line when live distributions open.
             </p>
             <div className="cta-row">
-              <SmoothScrollLink href="#waitlist" className="lp-btn dark">
-                Join waitlist
+              <SmoothScrollLink href="#waitlist" className="lp-btn primary">
+                Join waitlist <span className="arrow">&rarr;</span>
               </SmoothScrollLink>
             </div>
           </div>

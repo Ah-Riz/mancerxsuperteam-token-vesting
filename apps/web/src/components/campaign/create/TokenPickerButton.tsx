@@ -8,12 +8,10 @@ function shortenAddress(addr: string) {
   return addr.length > 12 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
 }
 
-const NATIVE_MINT_ADDRESS = "So11111111111111111111111111111111111111112";
-
 export function TokenPickerButton({
   mintAddress,
   onSelect,
-  autoWrap,
+  autoWrap: _autoWrap,
   error,
 }: {
   mintAddress: string;
@@ -24,12 +22,6 @@ export function TokenPickerButton({
   const [open, setOpen] = useState(false);
   const selected = POPULAR_TOKENS.find((t) => t.mint === mintAddress);
 
-  // Determine display label for NATIVE_MINT cases
-  const isNativeMint = mintAddress === NATIVE_MINT_ADDRESS;
-  const displayLabel = isNativeMint
-    ? (autoWrap ? "SOL (Auto-wrap)" : "wSOL")
-    : selected?.symbol ?? undefined;
-
   return (
     <>
       <button
@@ -39,15 +31,15 @@ export function TokenPickerButton({
           error ? "border-red-500/40" : "border-white/[0.08] hover:border-white/20"
         } bg-[#11161f]`}
       >
-        {selected || (isNativeMint && displayLabel) ? (
+        {selected ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {selected?.logoURI && !(isNativeMint && !autoWrap) ? (
-              <img src={selected.logoURI} alt={displayLabel ?? selected.symbol} className="h-6 w-6 rounded-full" />
-            ) : isNativeMint && !autoWrap ? (
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2a2d3a] text-[9px] font-bold text-white/60">W</div>
-            ) : null}
-            <span className="flex-1 text-[13px] font-medium text-white">{displayLabel ?? selected?.symbol}</span>
+            {selected.logoURI && <img src={selected.logoURI} alt={selected.symbol} className="h-6 w-6 rounded-full" />}
+            <span className="flex-1 text-[13px] font-medium text-white">
+              {selected.symbol}
+              {selected.isNativeSol ? " (Native)" : ""}
+              {selected.isWrappedSol ? " (Wrapped)" : ""}
+            </span>
           </>
         ) : mintAddress ? (
           <>

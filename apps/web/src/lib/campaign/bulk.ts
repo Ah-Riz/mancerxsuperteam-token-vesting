@@ -284,16 +284,21 @@ export function parseBulkCsv(
     issues.push(issue("header", "CSV must include at least one data row."));
   }
 
-  // Check for duplicate beneficiaries (program limitation: 1 ClaimRecord per beneficiary per tree)
-  const beneficiaryCounts = new Map<string, number[]>();
-  for (const row of parsedRows) {
-    const existing = beneficiaryCounts.get(row.beneficiary) ?? [];
-    existing.push(row.rowNumber);
-    beneficiaryCounts.set(row.beneficiary, existing);
-  }
-  for (const [addr, rows] of beneficiaryCounts) {
-    if (rows.length > 1) {
-      issues.push(issue(rows[1], `Duplicate beneficiary ${addr.slice(0, 8)}… — each recipient can only appear once per campaign.`));
+  // Check for duplicate beneficiaries (1 ClaimRecord per beneficiary per tree).
+  // Milestone leaves (releaseType 2) are exempt — same wallet can hold multiple
+  // milestones with different milestone_idx in one campaign.
+  const hasMilestone = parsedRows.some((r) => r.releaseType === 2);
+  if (!hasMilestone) {
+    const beneficiaryCounts = new Map<string, number[]>();
+    for (const row of parsedRows) {
+      const existing = beneficiaryCounts.get(row.beneficiary) ?? [];
+      existing.push(row.rowNumber);
+      beneficiaryCounts.set(row.beneficiary, existing);
+    }
+    for (const [addr, rows] of beneficiaryCounts) {
+      if (rows.length > 1) {
+        issues.push(issue(rows[1], `Duplicate beneficiary ${addr.slice(0, 8)}… — each recipient can only appear once per campaign.`));
+      }
     }
   }
 

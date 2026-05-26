@@ -33,7 +33,7 @@ export function useProofLookup(
   treeAddress: string | undefined,
   beneficiary: string | undefined,
 ) {
-  return useQuery<ProofResponse>({
+  return useQuery<ProofResponse | null>({
     queryKey: ["proof", treeAddress, beneficiary],
     queryFn: async () => {
       const params = new URLSearchParams({ beneficiary: beneficiary! });
@@ -41,6 +41,9 @@ export function useProofLookup(
         `/api/campaigns/${treeAddress}/proof?${params}`,
       );
       if (!res.ok) {
+        if (res.status === 404) {
+          return null;
+        }
         throw new ProofLookupError(res.status);
       }
       return res.json();
