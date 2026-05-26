@@ -527,7 +527,12 @@
           "signer": true
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "Classic SPL Token mints only — Token-2022 mints are rejected to avoid",
+            "silent transfer-fee deductions. The constraint verifies the mint account",
+            "is owned by the classic Token program rather than Token-2022."
+          ]
         },
         {
           "name": "vesting_tree",
@@ -826,7 +831,12 @@
           "signer": true
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "Classic SPL Token mints only — Token-2022 mints are rejected to avoid",
+            "silent transfer-fee deductions. The constraint verifies the mint account",
+            "is owned by the classic Token program rather than Token-2022."
+          ]
         },
         {
           "name": "vesting_tree",
@@ -2225,6 +2235,11 @@
       "code": 6036,
       "name": "NativeSolRentViolation",
       "msg": "Native SOL transfer would drop PDA below rent-exempt minimum"
+    },
+    {
+      "code": 6037,
+      "name": "UnsupportedMint",
+      "msg": "Token-2022 mints are not supported; use classic SPL Token"
     }
   ],
   "types": [
