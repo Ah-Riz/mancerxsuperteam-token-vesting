@@ -27,6 +27,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "@velthoryn/client": "workspace:*",
+    "@vercel/analytics": "^2.0.1",
     "bs58": "^6.0.0",
     "drizzle-orm": "^0.39.3",
     "keccak256": "^1.0.6",
