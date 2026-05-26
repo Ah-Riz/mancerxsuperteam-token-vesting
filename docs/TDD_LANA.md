@@ -605,7 +605,7 @@ pub struct CancelCampaign<'info> {
 }
 ```
 
-**State mutations:** `vesting_tree.cancelled_at = Some(Clock::get()?.unix_timestamp)`
+**State mutations:** `vesting_tree.cancelled_at = Some(Clock::get()?.unix_timestamp)`; `vesting_tree.paused = false` (clears pause so grace-period claims work)
 
 **Event:** `CampaignCancelled { tree, cancelled_at, claimed_at_cancel: vesting_tree.total_claimed }`
 
@@ -1077,6 +1077,10 @@ describe("golden vector", () => {
 - T39: `fund_campaign` exceeding total_supply → `OverFunded`
 - T40: `withdraw` on multi-leaf campaign → `NotSingleStream`
 - T41: `get_vested_amount` view function test (simulate)
+- T69: pause → cancel → claim during grace succeeds
+- T70: cancel on paused campaign resets `paused = false`
+- EXPLOIT 12 (`security.spec.ts`): pause+cancel cannot lock beneficiaries out of grace claims
+- Clock: pause at T1, cancel at T2, claim mid-grace, creator `withdraw_unvested` after grace (50/50 split)
 
 ---
 

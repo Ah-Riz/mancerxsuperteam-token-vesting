@@ -152,9 +152,18 @@ This instruction moves tokens. Validation order is not arbitrary — it determin
 
 #### Validation order and why it matters
 
-**Validation 1: `!vesting_tree.paused` → `CampaignPaused`**
+**Validation 1: pause guard → `CampaignPaused`**
 
-This is a cheap boolean read that short-circuits before any expensive computation. It runs first so that during an emergency pause, no CPU is spent on Merkle proof verification or schedule math.
+```rust
+require!(
+    !vesting_tree.paused || vesting_tree.cancelled_at.is_some(),
+    VestingError::CampaignPaused
+);
+```
+
+This is a cheap boolean read that short-circuits before any expensive computation. During an active (non-cancelled) pause, claims are blocked. After `cancel_campaign`, `paused` is reset to `false` and the guard also allows claims when `cancelled_at` is set (defense in depth if pause was not cleared).
+
+**Remediation (2026-05): pause+cancel exploit.** Previously, `cancel_campaign` left `paused == true`, so beneficiaries could not claim during the 7-day grace period while `unpause` was blocked by `cancelled_at`. Fix: `cancel_campaign` sets `paused = false`; `claim` / `withdraw` use the guard above.
 
 **Validation 2: `beneficiary.key() == leaf.beneficiary` → `UnauthorizedClaimer`**
 

@@ -11,6 +11,7 @@
  */
 
 import { PublicKey, Keypair } from "@solana/web3.js";
+import nacl from "tweetnacl";
 import BN from "bn.js";
 
 // clients/ts — reference merkle implementation
@@ -167,12 +168,32 @@ interface PostResponse {
   creator: string;
 }
 
+async function createAuthHeader(
+  creator: Keypair,
+): Promise<string> {
+  const nonceRes = await fetchWithTimeout(`${BASE_URL}/api/auth/nonce`);
+  if (!nonceRes.ok) {
+    throw new Error(`GET /api/auth/nonce failed: HTTP ${nonceRes.status}`);
+  }
+  const { nonce } = (await nonceRes.json()) as { nonce: string };
+  const message = {
+    nonce,
+    timestamp: Date.now(),
+    wallet: creator.publicKey.toBase58(),
+  };
+  const messageBytes = Buffer.from(JSON.stringify(message), "utf8");
+  const signature = nacl.sign.detached(messageBytes, creator.secretKey);
+  const token = `${Buffer.from(signature).toString("base64")}.${messageBytes.toString("base64")}`;
+  return `Bearer ${token}`;
+}
+
 async function postCampaign(
   prepared: ReturnType<typeof prepareCampaign>,
   _recipients: CampaignRecipient[]
 ): Promise<PostResponse> {
+  const creatorKeypair = Keypair.generate();
   const treeAddress = Keypair.generate().publicKey.toBase58();
-  const creator = Keypair.generate().publicKey.toBase58();
+  const creator = creatorKeypair.publicKey.toBase58();
   const mint = Keypair.generate().publicKey.toBase58();
   const now = Math.floor(Date.now() / 1000);
 
@@ -205,9 +226,13 @@ async function postCampaign(
     })),
   };
 
+  const authorization = await createAuthHeader(creatorKeypair);
   const res = await fetchWithTimeout(`${BASE_URL}/api/campaigns`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      authorization,
+    },
     body: JSON.stringify(body),
   });
 
@@ -333,10 +358,11 @@ async function main(): Promise<void> {
   try {
     postRes = await postCampaign(prepared, recipients);
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     const msg =
       err instanceof DOMException && err.name === "AbortError"
         ? `Timed out after ${TIMEOUT_MS}ms — server may be cold-starting. Try --timeout 30000`
-        : `Connection failed — is the dev server running at ${BASE_URL}? (cd apps/web && pnpm dev)`;
+        : `Request failed: ${detail}`;
     fail("POST /api/campaigns", msg);
     recordSummary("POST", "FAIL", msg);
     printSummaryTable();

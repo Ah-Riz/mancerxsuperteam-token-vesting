@@ -197,6 +197,22 @@ Beneficiary ──► claim (Merkle proof)  OR  withdraw (leaf_count == 1)
 
 ---
 
+### VEL-012 — High (fixed 2026-05) — Pause+cancel locked grace-period claims
+
+**Description:** `cancel_campaign` set `cancelled_at` but left `paused == true`. `claim` and `withdraw` required `!paused`, so beneficiaries could not claim vested tokens during the 7-day grace period. `unpause_campaign` was blocked by `cancelled_at.is_none()` on the account constraint. After grace, `withdraw_unvested` swept the full vault (including vested-but-unclaimed tokens).
+
+**Remediation (implemented):**
+
+1. **`cancel_campaign.rs`** — `tree.paused = false` after setting `cancelled_at`.
+2. **`claim.rs` / `withdraw.rs`** — `require!(!tree.paused || tree.cancelled_at.is_some(), CampaignPaused)`.
+3. **`cancel_stream.rs`** — allow cancel while paused; clear `paused` on cancel.
+
+**Verification:** T69, T70, EXPLOIT 12, bankrun clock test (pause T1 → cancel T2 → claim → `withdraw_unvested` 50/50 split).
+
+**Status:** Fixed
+
+---
+
 ### VEL-002 — Low — Static Solana lints not in pipeline
 
 **Description:** [Trail of Bits solana-lints](https://github.com/trailofbits/solana-lints) are not configured in `programs/vesting/Cargo.toml` or CI.
@@ -499,7 +515,7 @@ Structured pass per **solana-defi-vulnerability-analyst-agent** (defensive triag
 
 | Suite | Role |
 |-------|------|
-| `tests/security.spec.ts` | **EXPLOIT 1–11** (validator): over-claim, wrong beneficiary, forged proof, **oversized proof (VEL-009)**, milestone double-claim, grace/fund/pause/close abuses, **VEL-001** withdraw-close-withdraw |
+| `tests/security.spec.ts` | **EXPLOIT 1–12** (validator): over-claim, wrong beneficiary, forged proof, **oversized proof (VEL-009)**, milestone double-claim, grace/fund/pause/close abuses, **VEL-001** withdraw-close-withdraw, **pause+cancel grace lockout (fixed 2026-05)** |
 | `tests/vesting.clock.spec.ts` | Bankrun clock/grace/withdraw; **EXPLOIT 4** (vault drain after grace), **EXPLOIT 11** (VEL-001 regression) |
 | `tests/vesting.supplementary.spec.ts` | Streams, milestones, edge cases (~50 tests) |
 | `tests/golden_vector.spec.ts` | Cross-language `leaf_hash` (Rust ↔ TypeScript) |

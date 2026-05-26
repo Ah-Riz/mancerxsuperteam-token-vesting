@@ -32,6 +32,8 @@ pub fn handler(ctx: Context<CancelCampaign>) -> Result<()> {
     let claimed_at_cancel = tree.total_claimed;
 
     tree.cancelled_at = Some(cancelled_at);
+    // Cancelled campaigns cannot be unpaused; clear pause so grace-period claims work.
+    tree.paused = false;
 
     emit!(CampaignCancelled {
         tree: tree.key(),

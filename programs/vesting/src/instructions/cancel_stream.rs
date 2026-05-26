@@ -79,7 +79,7 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
         tree_key = tree.key();
         is_native = tree.is_native();
 
-        require!(!tree.paused, VestingError::CampaignPaused);
+        // cancel_stream may run while paused; cancel clears pause below.
 
         // SPL-only validations — skip for native SOL
         if !is_native {
@@ -202,6 +202,7 @@ pub fn handler(ctx: Context<CancelStream>, args: WithdrawArgs) -> Result<()> {
 
         // State mutations BEFORE transfers (CEI pattern)
         tree.cancelled_at = Some(cancelled_at);
+        tree.paused = false;
 
         if to_beneficiary > 0 {
             cr.claimed_amount = cr
