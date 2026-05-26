@@ -11,10 +11,12 @@ function shortenAddress(addr: string) {
 export function TokenPickerButton({
   mintAddress,
   onSelect,
+  autoWrap: _autoWrap,
   error,
 }: {
   mintAddress: string;
-  onSelect: (mint: string, decimals: number) => void;
+  onSelect: (mint: string, decimals: number, autoWrap?: boolean) => void;
+  autoWrap?: boolean;
   error?: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +35,11 @@ export function TokenPickerButton({
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {selected.logoURI && <img src={selected.logoURI} alt={selected.symbol} className="h-6 w-6 rounded-full" />}
-            <span className="flex-1 text-[13px] font-medium text-white">{selected.symbol}</span>
+            <span className="flex-1 text-[13px] font-medium text-white">
+              {selected.symbol}
+              {selected.isNativeSol ? " (Native)" : ""}
+              {selected.isWrappedSol ? " (Wrapped)" : ""}
+            </span>
           </>
         ) : mintAddress ? (
           <>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { NATIVE_MINT, getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
+import { useEffect, useRef, useState } from "react";
 import { POPULAR_TOKENS } from "@/lib/constants/popular-tokens";
 import { useWalletTokens } from "@/hooks/useWalletTokens";
 import { useTokenMetadata } from "@/hooks/useTokenMetadata";
+import { useToast } from "@/components/shell/Toast";
+import { WRAPPED_SOL_MINT_ADDRESS } from "@/lib/sol/auto-wrap";
 import { WrapSolModal } from "./WrapSolModal";
 
 function shortenMint(addr: string) {
@@ -28,41 +28,21 @@ export function TokenPickerModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSelect: (mint: string, decimals: number) => void;
+  onSelect: (mint: string, decimals: number, autoWrap?: boolean) => void;
   selectedMint: string;
 }) {
-  const { connection } = useConnection();
-  const { publicKey } = useWallet();
   const [search, setSearch] = useState("");
   const [showWrapModal, setShowWrapModal] = useState(false);
-  const [solBalance, setSolBalance] = useState<number | null>(null);
-  const [wsolBalance, setWsolBalance] = useState<number>(0);
+  const { toast } = useToast();
   const { tokens: walletTokens, loading: walletLoading, refetch: refetchWalletTokens } = useWalletTokens();
   const { metadata: customToken, loading: customLoading, error: customError } = useTokenMetadata(search);
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  // Fetch SOL + wSOL balances
-  const fetchBalances = useCallback(async () => {
-    if (!publicKey || !connection) return;
-    try {
-      const lamports = await connection.getBalance(publicKey);
-      setSolBalance(lamports / 1e9);
-    } catch { setSolBalance(null); }
-    try {
-      const ata = getAssociatedTokenAddressSync(NATIVE_MINT, publicKey);
-      const account = await getAccount(connection, ata);
-      setWsolBalance(Number(account.amount) / 1e9);
-    } catch { setWsolBalance(0); }
-  }, [connection, publicKey]);
-
-  // Fetch on open + poll every 5s while open
   useEffect(() => {
     if (!open) return;
     setSearch("");
-    fetchBalances();
-    const interval = setInterval(fetchBalances, 5000);
-    return () => clearInterval(interval);
-  }, [open, fetchBalances]);
+    refetchWalletTokens();
+  }, [open, refetchWalletTokens]);
 
   useEffect(() => {
     if (!open) return;
@@ -77,26 +57,38 @@ export function TokenPickerModal({
   const filteredPopular = POPULAR_TOKENS.filter(
     (t) => t.symbol.toLowerCase().includes(query) || t.name.toLowerCase().includes(query) || t.mint.includes(search.trim()),
   );
+  const nativeMint = WRAPPED_SOL_MINT_ADDRESS;
+  const wsolEntry = walletTokens.find(
+    (t) => t.mintAddress === nativeMint && !t.isNativeSol && Number(t.uiAmount) > 0,
+  );
   const filteredWallet = walletTokens.filter(
-    (t) => !POPULAR_TOKENS.some((p) => p.mint === t.mintAddress) &&
+    (t) => !t.isNativeSol &&
+      t.mintAddress !== nativeMint &&
+      !POPULAR_TOKENS.some((p) => p.mint === t.mintAddress) &&
       (t.mintAddress.includes(search.trim())),
   );
 
-  function getPopularBalance(token: { mint: string; symbol: string; isNativeSol?: boolean }): string {
-    if (token.isNativeSol) return solBalance !== null ? solBalance.toFixed(4) : "–";
-    if (token.symbol === "wSOL") return wsolBalance.toFixed(4);
-    const walletMatch = walletTokens.find((w) => w.mintAddress === token.mint);
-    return walletMatch ? walletMatch.uiAmount : "–";
+  function getPopularBalance(token: { mint: string; symbol: string; isNativeSol?: boolean; isWrappedSol?: boolean }): string {
+    if (token.isNativeSol) {
+      const nativeEntry = walletTokens.find((w) => w.isNativeSol);
+      return nativeEntry && Number(nativeEntry.uiAmount) > 0 ? nativeEntry.uiAmount : "–";
+    }
+    if (token.isWrappedSol) {
+      const wrappedEntry = walletTokens.find((w) => w.mintAddress === token.mint && !w.isNativeSol);
+      return wrappedEntry && Number(wrappedEntry.uiAmount) > 0 ? wrappedEntry.uiAmount : "–";
+    }
+    const walletMatch = walletTokens.find((w) => w.mintAddress === token.mint && !w.isNativeSol);
+    return walletMatch && Number(walletMatch.uiAmount) > 0 ? walletMatch.uiAmount : "–";
   }
 
-  function handleTokenClick(mint: string, decimals: number) {
-    onSelect(mint, decimals);
+  function handleTokenClick(mint: string, decimals: number, autoWrap?: boolean) {
+    onSelect(mint, decimals, autoWrap);
     onClose();
   }
 
   async function handleWrapSuccess() {
     setShowWrapModal(false);
-    await fetchBalances();
+    toast("wSOL is ready! Select it from the token list.", "success");
     await refetchWalletTokens();
   }
 
@@ -142,24 +134,14 @@ export function TokenPickerModal({
             </div>
           )}
           {filteredPopular.map((token) => {
-            const isNativeSol = !!token.isNativeSol;
-            const isWsol = token.symbol === "wSOL";
             const balance = getPopularBalance(token);
             return (
               <button
                 key={token.mint + token.symbol}
                 type="button"
-                onClick={() => {
-                  if (isNativeSol) {
-                    setShowWrapModal(true);
-                  } else if (isWsol && wsolBalance === 0) {
-                    setShowWrapModal(true);
-                  } else {
-                    handleTokenClick(token.mint, token.decimals);
-                  }
-                }}
+                onClick={() => handleTokenClick(token.mint, token.decimals, false)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                  selectedMint === token.mint && !isNativeSol ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
+                  selectedMint === token.mint ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
                 }`}
               >
                 {token.logoURI ? (
@@ -171,8 +153,11 @@ export function TokenPickerModal({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] font-medium text-white">{token.symbol}</span>
-                    {isNativeSol && (
-                      <span className="rounded-full bg-white/[0.1] px-2 py-0.5 text-[10px] text-white/60">Wrap required</span>
+                    {token.isNativeSol && (
+                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">Native</span>
+                    )}
+                    {token.isWrappedSol && (
+                      <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/60">Wrapped</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
@@ -192,6 +177,25 @@ export function TokenPickerModal({
               </button>
             );
           })}
+
+          {/* wSOL balance (if user has any) */}
+          {wsolEntry && (
+            <button
+              type="button"
+              onClick={() => handleTokenClick(wsolEntry.mintAddress, wsolEntry.decimals ?? 9, false)}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]`}
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2a2d3a] text-[12px] font-bold text-white/60">W</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium text-white">wSOL</span>
+                  <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/50">Wrapped</span>
+                </div>
+                <span className="text-[11px] text-[#6b7280]">Wrapped SOL in wallet</span>
+              </div>
+              <span className="text-[12px] text-[#6b7280]">{wsolEntry.uiAmount}</span>
+            </button>
+          )}
 
           {/* Wallet Tokens */}
           {filteredWallet.length > 0 && (

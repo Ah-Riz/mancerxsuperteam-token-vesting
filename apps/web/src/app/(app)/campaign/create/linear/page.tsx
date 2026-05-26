@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { datetimeLocalToUnix } from "@/lib/stream/datetime";
 import { validatePublicKey, validateAmountWithDecimals, validateSchedule, hasErrors } from "@/lib/validation/stream-form";
-import { bulkCsvTemplateForType, parseBulkCsv, prepareBulkCampaign, type BulkCsvParseResult, type PreparedBulkCampaign } from "@/lib/campaign/bulk";
+import { bulkCsvTemplateForType, parseBulkCsv, prepareBulkCampaign, toRawAmount, type BulkCsvParseResult, type BulkCsvRow, type PreparedBulkCampaign } from "@/lib/campaign/bulk";
 import { useCreateCampaign } from "@/hooks/useCreateCampaign";
 import { useCreateStream, type CreateStreamResult } from "@/hooks/useCreateStream";
 import { useWalletTokens } from "@/hooks/useWalletTokens";
@@ -33,7 +33,6 @@ type TxState =
   | { type: "success"; results: CreateStreamResult[] }
   | { type: "error"; msg: string }
   | { type: "bulk-ready"; prepared: PreparedBulkCampaign }
-  | { type: "bulk-created"; sig: string; treeAddress: string; totalSupply: string; prepared: PreparedBulkCampaign }
   | { type: "bulk-funded"; sig: string; treeAddress: string; prepared: PreparedBulkCampaign };
 
 function newStream(): StreamEntry {
@@ -43,7 +42,7 @@ function newStream(): StreamEntry {
 export default function LinearCreatePage() {
   const { publicKey } = useWallet();
   const { createStream, formatVestingError: formatStreamError } = useCreateStream();
-  const { createCampaign, fundCampaign, formatVestingError: formatCampaignError } = useCreateCampaign();
+  const { createAndFundCampaign, formatVestingError: formatCampaignError } = useCreateCampaign();
   const { tokens: walletTokens } = useWalletTokens();
   const { toast } = useToast();
 
@@ -51,6 +50,7 @@ export default function LinearCreatePage() {
   const [mode, setMode] = useState<Mode>("single");
   const [mintAddress, setMintAddress] = useState("");
   const [mintDecimals, setMintDecimals] = useState<number | null>(null);
+  const [useAutoWrap, setUseAutoWrap] = useState(false);
   const [cancellable, setCancellable] = useState(false);
   const [baseCampaignId] = useState(() => Math.floor(Date.now() / 1000) % 1000000);
 
@@ -66,14 +66,29 @@ export default function LinearCreatePage() {
 
   // Derived
   const tokenInfo = POPULAR_TOKENS.find((t) => t.mint === mintAddress);
+  const effectiveMintDecimals = tokenInfo?.decimals ?? mintDecimals;
   const tokenSymbol = tokenInfo?.symbol ?? (mintAddress ? mintAddress.slice(0, 4) : "");
-  const walletToken = walletTokens.find((t) => t.mintAddress === mintAddress);
+  const walletToken = tokenInfo?.isNativeSol
+    ? walletTokens.find((t) => t.isNativeSol)
+    : tokenInfo?.isWrappedSol
+    ? walletTokens.find((t) => t.mintAddress === mintAddress && !t.isNativeSol)
+    : walletTokens.find((t) => t.mintAddress === mintAddress && !t.isNativeSol) ?? walletTokens.find((t) => t.mintAddress === mintAddress);
   const tokenBalance = walletToken?.uiAmount ?? null;
   const totalAmount = streams.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
 
-  function handleTokenSelect(mint: string, decimals: number) {
+  function handleTokenSelect(mint: string, decimals: number, autoWrap?: boolean) {
     setMintAddress(mint);
     setMintDecimals(decimals);
+    setUseAutoWrap(autoWrap ?? false);
+    if (mode === "bulk" && csvText.trim()) {
+      const result = parseBulkCsv(csvText, decimals);
+      setCsvResult(result);
+      if (result.issues.length === 0 && result.rows.length > 0) {
+        setTxState({ type: "bulk-ready", prepared: prepareBulkCampaign(result.rows) });
+      } else {
+        setTxState({ type: "idle" });
+      }
+    }
   }
 
   function updateStream(id: string, field: keyof StreamEntry, value: string) {
@@ -90,15 +105,39 @@ export default function LinearCreatePage() {
     setStreams((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function buildManualCampaignRows(): BulkCsvRow[] {
+    return streams.map((stream, index) => {
+      const startUnix = stream.startTime ? datetimeLocalToUnix(stream.startTime) : Math.floor(Date.now() / 1000);
+      const cliffUnix = stream.cliffTime ? datetimeLocalToUnix(stream.cliffTime) : startUnix;
+      const endUnix = datetimeLocalToUnix(stream.endTime);
+      return {
+        rowNumber: index + 1,
+        beneficiary: stream.recipient.trim(),
+        amountInput: stream.amount.trim(),
+        amountRaw: effectiveMintDecimals !== null ? toRawAmount(stream.amount.trim(), effectiveMintDecimals) : stream.amount.trim(),
+        releaseType: 1,
+        startTime: startUnix,
+        cliffTime: cliffUnix,
+        endTime: endUnix,
+        milestoneIdx: 0,
+      };
+    });
+  }
+
   async function handleSubmit() {
     if (!publicKey || !mintAddress) return;
 
     const errors: Record<string, string | null> = {};
+    const recipientRows = new Map<string, number[]>();
     for (let i = 0; i < streams.length; i++) {
       const s = streams[i];
       const recipErr = validatePublicKey(s.recipient);
       if (recipErr) errors[`recipient_${i}`] = recipErr;
-      const amtErr = validateAmountWithDecimals(s.amount, mintDecimals);
+      else {
+        const normalized = s.recipient.trim();
+        recipientRows.set(normalized, [...(recipientRows.get(normalized) ?? []), i]);
+      }
+      const amtErr = validateAmountWithDecimals(s.amount, effectiveMintDecimals);
       if (amtErr) errors[`amount_${i}`] = amtErr;
       if (!s.endTime) errors[`end_${i}`] = "End time is required.";
       const startUnix = s.startTime ? datetimeLocalToUnix(s.startTime) : Math.floor(Date.now() / 1000);
@@ -107,8 +146,38 @@ export default function LinearCreatePage() {
       const schedErr = s.endTime ? validateSchedule(startUnix, cliffUnix, endUnix, 1) : null;
       if (schedErr) errors[`end_${i}`] = schedErr;
     }
+    for (const indexes of recipientRows.values()) {
+      if (indexes.length > 1) {
+        for (const index of indexes) {
+          errors[`recipient_${index}`] = "Duplicate recipient. Each wallet can only appear once per campaign.";
+        }
+      }
+    }
     setFormErrors(errors);
     if (hasErrors(errors)) return;
+
+    if (streams.length > 1) {
+      setTxState({ type: "loading", label: `Creating campaign for ${streams.length} recipients...` });
+      try {
+        const prepared = prepareBulkCampaign(buildManualCampaignRows());
+        const result = await createAndFundCampaign(
+          { mintAddress, campaignId: String(baseCampaignId), prepared, cancellable },
+          { autoWrap: useAutoWrap },
+        );
+        toast("Campaign created and funded!", "success");
+        setTxState({ type: "bulk-funded", sig: result.fundSig, treeAddress: result.treeAddress, prepared });
+        setStreams([newStream()]);
+        setFormErrors({});
+      } catch (error: unknown) {
+        if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
+          toast("Transaction rejected", "error");
+          setTxState({ type: "idle" });
+          return;
+        }
+        setTxState({ type: "error", msg: formatCampaignError(error) });
+      }
+      return;
+    }
 
     setTxState({ type: "loading", label: `Creating ${streams.length} linear stream(s)...` });
     const results: CreateStreamResult[] = [];
@@ -123,9 +192,9 @@ export default function LinearCreatePage() {
         const cid = String(baseCampaignId * 100 + i);
 
         const result = await createStream({
-          beneficiary: s.recipient, mintAddress, amount: s.amount, mintDecimals,
+          beneficiary: s.recipient, mintAddress, amount: s.amount, mintDecimals: effectiveMintDecimals,
           campaignId: cid, releaseType: 1, startTime: startUnix, cliffTime: cliffUnix,
-          endTime: endUnix, milestoneIdx: 0, cancellable,
+          endTime: endUnix, milestoneIdx: 0, cancellable, autoWrap: useAutoWrap,
         });
         results.push(result);
       }
@@ -152,7 +221,7 @@ export default function LinearCreatePage() {
   // Bulk handlers
   function handleCsvParse() {
     if (!csvText.trim()) return;
-    const result = parseBulkCsv(csvText, mintDecimals);
+    const result = parseBulkCsv(csvText, effectiveMintDecimals);
     setCsvResult(result);
     if (result.issues.length === 0 && result.rows.length > 0) {
       setTxState({ type: "bulk-ready", prepared: prepareBulkCampaign(result.rows) });
@@ -163,11 +232,14 @@ export default function LinearCreatePage() {
 
   async function handleBulkCreate() {
     if (txState.type !== "bulk-ready") return;
-    setTxState({ type: "loading", label: "Creating campaign..." });
+    setTxState({ type: "loading", label: "Creating and funding campaign..." });
     try {
-      const result = await createCampaign({ mintAddress, campaignId: bulkCampaignId, prepared: txState.prepared, cancellable });
-      toast("Campaign created! Now fund the vault.", "success");
-      setTxState({ type: "bulk-created", sig: result.sig, treeAddress: result.treeAddress, totalSupply: result.totalSupply, prepared: txState.prepared });
+      const result = await createAndFundCampaign(
+        { mintAddress, campaignId: bulkCampaignId, prepared: txState.prepared, cancellable },
+        { autoWrap: useAutoWrap },
+      );
+      toast("Campaign created and funded!", "success");
+      setTxState({ type: "bulk-funded", sig: result.fundSig, treeAddress: result.treeAddress, prepared: txState.prepared });
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
         toast("Transaction rejected", "error");
@@ -177,26 +249,7 @@ export default function LinearCreatePage() {
       setTxState({ type: "error", msg: formatCampaignError(error) });
     }
   }
-
-  async function handleBulkFund() {
-    if (txState.type !== "bulk-created") return;
-    const currentState = txState;
-    setTxState({ type: "loading", label: "Funding vault..." });
-    try {
-      const result = await fundCampaign({ mintAddress, treeAddress: currentState.treeAddress, totalSupply: currentState.totalSupply });
-      toast("Campaign funded!", "success");
-      setTxState({ type: "bulk-funded", sig: result.sig, treeAddress: result.treeAddress, prepared: currentState.prepared });
-    } catch (error: unknown) {
-      if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
-        toast("Transaction rejected", "error");
-        setTxState(currentState);
-        return;
-      }
-      setTxState({ type: "error", msg: formatCampaignError(error) });
-    }
-  }
-
-  const prepared = txState.type === "bulk-ready" || txState.type === "bulk-created" || txState.type === "bulk-funded" ? txState.prepared : null;
+  const prepared = txState.type === "bulk-ready" || txState.type === "bulk-funded" ? txState.prepared : null;
 
   if (!publicKey) {
     return (
@@ -240,7 +293,7 @@ export default function LinearCreatePage() {
             {/* Token */}
             <div>
               <label className={LABEL}>Token</label>
-              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} error={undefined} />
+              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} autoWrap={useAutoWrap} error={undefined} />
             </div>
 
             {/* Cancellation */}
@@ -253,10 +306,10 @@ export default function LinearCreatePage() {
               {streams.map((stream, i) => (
                 <div key={stream.id} className={`${CARD} space-y-4 p-5`}>
                   <div className="flex items-center justify-between">
-                    <p className="text-[13px] font-medium text-white">Stream #{i + 1}</p>
+                    <p className="text-[13px] font-medium text-white">{streams.length > 1 ? `Recipient #${i + 1}` : `Stream #${i + 1}`}</p>
                     <div className="flex gap-1.5">
                       <button type="button" onClick={() => duplicateStream(i)} className="rounded-md border border-white/[0.08] px-2 py-1 text-[10px] text-[#8b92a5] hover:text-white">
-                        Duplicate
+                        Add Recipient
                       </button>
                       {streams.length > 1 && (
                         <button type="button" onClick={() => removeStream(i)} className="rounded-md border border-red-500/20 px-2 py-1 text-[10px] text-red-400 hover:text-red-300">
@@ -268,7 +321,7 @@ export default function LinearCreatePage() {
 
                   {/* Amount */}
                   <Field
-                    label={`Amount${mintDecimals !== null ? ` (${mintDecimals} decimals)` : ""}`}
+                    label={`Amount${effectiveMintDecimals !== null ? ` (${effectiveMintDecimals} decimals)` : ""}`}
                     input={
                       <div className="relative">
                         <input
@@ -370,7 +423,7 @@ export default function LinearCreatePage() {
                 onClick={() => setStreams((prev) => [...prev, newStream()])}
                 className="w-full rounded-xl border border-dashed border-white/[0.12] py-3 text-[13px] font-medium text-[#8b92a5] transition hover:border-white/[0.2] hover:text-white"
               >
-                + Add Stream
+                + Add Recipient
               </button>
             </>
           )}
@@ -380,7 +433,7 @@ export default function LinearCreatePage() {
             <BulkCsvSection
               mintAddress={mintAddress}
               onMintAddressChange={(v) => setMintAddress(v)}
-              mintDecimals={mintDecimals}
+              mintDecimals={effectiveMintDecimals}
               mintLoading={false}
               campaignId={bulkCampaignId}
               onCampaignIdChange={() => {}}
@@ -405,33 +458,34 @@ export default function LinearCreatePage() {
               ))}
             </div>
           )}
-          {txState.type === "bulk-created" && <TxResultCard title="Campaign created!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
           {txState.type === "bulk-funded" && <TxResultCard title="Campaign funded!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
           {txState.type === "error" && <ErrorCard title="Transaction Failed" body={txState.msg} />}
         </div>
 
         {/* Sidebar */}
         <FormSummary
-          amount={mode === "single" ? String(totalAmount || "") : (prepared && mintDecimals !== null ? String(Number(prepared.totalSupply) / 10 ** mintDecimals) : (prepared?.totalSupply ?? "0"))}
+          amount={mode === "single" ? String(totalAmount || "") : (prepared && effectiveMintDecimals !== null ? String(Number(prepared.totalSupply) / 10 ** effectiveMintDecimals) : (prepared?.totalSupply ?? "0"))}
           tokenSymbol={tokenSymbol}
           tokenBalance={tokenBalance}
-          streamCount={1}
-          mode={mode === "single" ? "single" : "bulk"}
+          streamCount={mode === "single" ? streams.length : 1}
+          mode={mode === "bulk" || (mode === "single" && streams.length > 1) ? "bulk" : "single"}
           submitLabel={
             mode === "bulk"
-              ? (txState.type === "bulk-created" ? "Step 2: Fund Vault" : "Step 1: Create Campaign")
-              : `Create ${streams.length} Linear Stream${streams.length > 1 ? "s" : ""}`
+              ? "Create & Fund Campaign"
+              : streams.length > 1
+                ? `Create Campaign (${streams.length} Recipients)`
+                : "Create Linear Stream"
           }
           loading={txState.type === "loading"}
           disabled={
             mode === "single"
               ? !mintAddress || streams.some((s) => !s.amount || !s.recipient || !s.endTime)
-              : txState.type !== "bulk-ready" && txState.type !== "bulk-created"
+              : txState.type !== "bulk-ready"
           }
           onSubmit={
             mode === "single"
               ? handleSubmit
-              : txState.type === "bulk-created" ? handleBulkFund : handleBulkCreate
+              : handleBulkCreate
           }
         />
       </div>

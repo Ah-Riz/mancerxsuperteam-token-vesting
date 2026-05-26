@@ -15,6 +15,7 @@ import {
   getSenderStreamStatus,
   type StreamStatus,
 } from "@/lib/vesting/list";
+import { POPULAR_TOKENS } from "@/lib/constants/popular-tokens";
 
 type TabKey = "all" | "recipient" | "sender";
 
@@ -66,8 +67,10 @@ type StreamRow = {
   createdAt: number;
   status: StreamStatus;
   roleLabel: string;
-  amountLabel: "Allocated" | "Total Supply";
+  amountLabel: "Your Allocation" | "Total Supply";
   amountRaw: bigint;
+  secondaryAmountLabel?: "Total Supply";
+  secondaryAmountRaw?: bigint;
   nextLabel: string;
   nextValue: string;
   typeLabel: string;
@@ -167,26 +170,25 @@ export default function CampaignsPage() {
   }, []);
 
   const walletAddress = publicKey?.toBase58();
-  const allCampaignsQuery = useCampaignList({ limit: 100 });
+  const senderCampaignsQuery = useCampaignList(
+    walletAddress ? { creator: walletAddress, limit: 100 } : undefined,
+  );
   const recipientCampaignsQuery = useBeneficiaryCampaigns(walletAddress);
   const localCampaigns = useLocalCampaigns(walletAddress, localRefreshKey);
 
   const senderCampaigns = useMemo(() => {
-    const dbSenderCampaigns = (allCampaignsQuery.data?.campaigns ?? []).filter(
-      (campaign) => walletAddress && campaign.creator === walletAddress,
-    ) as SenderCampaign[];
+    const dbSenderCampaigns = ((senderCampaignsQuery.data?.campaigns ?? []) as SenderCampaign[]).filter(
+      (campaign) => campaign.creator === walletAddress,
+    );
 
     const seen = new Set(dbSenderCampaigns.map((campaign) => campaign.treeAddress));
-    const localOnly = allCampaignsQuery.error
-      ? localCampaigns.senderCampaigns.filter(
-          (campaign) => !seen.has(campaign.treeAddress) && campaign.creator === walletAddress,
-        )
-      : [];
+    const localOnly = localCampaigns.senderCampaigns.filter(
+      (campaign) => !seen.has(campaign.treeAddress) && campaign.creator === walletAddress,
+    );
 
     return [...dbSenderCampaigns, ...localOnly];
   }, [
-    allCampaignsQuery.data?.campaigns,
-    allCampaignsQuery.error,
+    senderCampaignsQuery.data?.campaigns,
     localCampaigns.senderCampaigns,
     walletAddress,
   ]);
@@ -196,18 +198,15 @@ export default function CampaignsPage() {
       const dbRecipientCampaigns = (recipientCampaignsQuery.data?.campaigns ?? []) as RecipientCampaign[];
 
       const seen = new Set(dbRecipientCampaigns.map((campaign) => campaign.treeAddress));
-      const localOnly = recipientCampaignsQuery.error
-        ? localCampaigns.recipientCampaigns.filter(
-            (campaign) => !seen.has(campaign.treeAddress),
-          )
-        : [];
+      const localOnly = localCampaigns.recipientCampaigns.filter(
+        (campaign) => !seen.has(campaign.treeAddress),
+      );
 
       return [...dbRecipientCampaigns, ...localOnly];
     },
     [
       localCampaigns.recipientCampaigns,
       recipientCampaignsQuery.data?.campaigns,
-      recipientCampaignsQuery.error,
     ],
   );
 
@@ -230,9 +229,21 @@ export default function CampaignsPage() {
     void Promise.all(
       uniqueMints.map(async (mint) => {
         try {
-          const info = await connection.getParsedAccountInfo(new PublicKey(mint));
-          const parsed = (info.value?.data as any)?.parsed;
-          return parsed?.type === "mint" ? [mint, parsed.info.decimals] as const : null;
+          const popularToken = POPULAR_TOKENS.find((token) => token.mint === mint);
+          if (popularToken) {
+            return [mint, popularToken.decimals] as const;
+          }
+
+          const pubkey = new PublicKey(mint);
+          const parsedInfo = await connection.getParsedAccountInfo(pubkey);
+          const parsed = (parsedInfo.value?.data as any)?.parsed;
+          if (parsed?.type === "mint") {
+            return [mint, parsed.info.decimals] as const;
+          }
+
+          const rawInfo = await connection.getAccountInfo(pubkey);
+          if (!rawInfo || rawInfo.data.length < 45) return null;
+          return [mint, rawInfo.data[44]] as const;
         } catch {
           return null;
         }
@@ -289,8 +300,10 @@ export default function CampaignsPage() {
         campaignId: campaign.campaignId,
         createdAt: campaign.createdAt,
         status: getRecipientStreamStatus(campaign, nowTs),
-        amountLabel: "Allocated",
+        amountLabel: "Your Allocation",
         amountRaw: toBigInt(campaign.myLeaf.amount),
+        secondaryAmountLabel: "Total Supply",
+        secondaryAmountRaw: toBigInt(campaign.totalSupply),
         nextLabel: "Release",
         nextValue: getReleaseStateText(campaign, nowTs),
         typeLabel: getReleaseTypeLabel(campaign.myLeaf.releaseType),
@@ -304,8 +317,8 @@ export default function CampaignsPage() {
       if (existing) {
         map.set(campaign.treeAddress, {
           ...row,
-          role: "both",
-          roleLabel: "Sender + Recipient",
+          role: existing.creator === walletAddress ? "both" : "recipient",
+          roleLabel: existing.creator === walletAddress ? "Sender + Recipient" : "Recipient",
         });
       } else {
         map.set(campaign.treeAddress, row);
@@ -313,7 +326,7 @@ export default function CampaignsPage() {
     }
 
     return [...map.values()].sort((a, b) => b.createdAt - a.createdAt);
-  }, [recipientCampaigns, senderCampaigns]);
+  }, [recipientCampaigns, senderCampaigns, walletAddress]);
 
   const filteredRows = rows.filter((row) => {
     if (activeTab === "recipient" && row.role === "sender") return false;
@@ -347,18 +360,18 @@ export default function CampaignsPage() {
     localCampaigns.senderCampaigns.length > 0 || localCampaigns.recipientCampaigns.length > 0;
 
   const isLoading =
-    allCampaignsQuery.isFetching ||
+    senderCampaignsQuery.isFetching ||
     recipientCampaignsQuery.isFetching ||
     localCampaigns.isLoading ||
     decimalsLoading;
   const apiError =
-    allCampaignsQuery.error?.message ?? recipientCampaignsQuery.error?.message ?? null;
+    senderCampaignsQuery.error?.message ?? recipientCampaignsQuery.error?.message ?? null;
   const error = rows.length === 0 ? apiError ?? localCampaigns.error : null;
   const showingLocalFallback = !!apiError && hasLocalRows;
 
   async function refreshAll() {
     setLocalRefreshKey((k) => k + 1);
-    await Promise.all([allCampaignsQuery.refetch(), recipientCampaignsQuery.refetch()]);
+    await Promise.all([senderCampaignsQuery.refetch(), recipientCampaignsQuery.refetch()]);
   }
 
   return (
@@ -467,6 +480,10 @@ export default function CampaignsPage() {
                   row.claimableRaw !== undefined && decimals !== undefined
                     ? formatWithDecimals(row.claimableRaw, decimals)
                     : null;
+                const secondaryAmountDisplay =
+                  row.secondaryAmountRaw !== undefined && decimals !== undefined
+                    ? formatWithDecimals(row.secondaryAmountRaw, decimals)
+                    : null;
 
                 return (
                   <CampaignRow
@@ -478,6 +495,8 @@ export default function CampaignsPage() {
                     title={row.metadata?.name || `Campaign #${row.campaignId}`}
                     amountLabel={row.amountLabel}
                     amountDisplay={amountDisplay}
+                    secondaryAmountLabel={row.secondaryAmountLabel}
+                    secondaryAmountDisplay={secondaryAmountDisplay}
                     claimableDisplay={row.primaryRole === "recipient" ? claimableDisplay : null}
                     counterpartyLabel={row.counterpartyLabel}
                     counterpartyValue={truncateAddress(row.counterpartyValue)}

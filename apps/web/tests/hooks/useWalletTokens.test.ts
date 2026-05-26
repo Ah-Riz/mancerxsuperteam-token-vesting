@@ -15,6 +15,7 @@ vi.mock("@solana/wallet-adapter-react", () => ({
 
 vi.mock("@solana/spl-token", () => ({
   TOKEN_PROGRAM_ID: { toBase58: () => "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+  NATIVE_MINT: { toBase58: () => "So11111111111111111111111111111111111111112" },
 }));
 
 import { WalletTokensProvider, useWalletTokens } from "@/components/providers/WalletTokensProvider";
@@ -66,7 +67,7 @@ describe("useWalletTokens", () => {
     });
 
     mockUseConnection.mockReturnValue({
-      connection: { getParsedTokenAccountsByOwner },
+      connection: { getParsedTokenAccountsByOwner, getBalance: vi.fn().mockResolvedValue(2_000_000_000) },
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });
 
@@ -79,6 +80,13 @@ describe("useWalletTokens", () => {
     expect(getParsedTokenAccountsByOwner).toHaveBeenCalledTimes(1);
     expect(result.current.error).toBeNull();
     expect(result.current.tokens).toEqual([
+      {
+        mintAddress: "So11111111111111111111111111111111111111112",
+        balanceRaw: "2000000000",
+        decimals: 9,
+        uiAmount: "2.0000",
+        isNativeSol: true,
+      },
       {
         mintAddress: MINT_BETA,
         balanceRaw: "5000000",
@@ -104,6 +112,7 @@ describe("useWalletTokens", () => {
     mockUseConnection.mockReturnValue({
       connection: {
         getParsedTokenAccountsByOwner: vi.fn().mockResolvedValue({ value: [] }),
+        getBalance: vi.fn().mockResolvedValue(1_000_000_000),
       },
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });
@@ -114,7 +123,15 @@ describe("useWalletTokens", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.tokens).toEqual([]);
+    expect(result.current.tokens).toEqual([
+      {
+        mintAddress: "So11111111111111111111111111111111111111112",
+        balanceRaw: "1000000000",
+        decimals: 9,
+        uiAmount: "1.0000",
+        isNativeSol: true,
+      },
+    ]);
     expect(result.current.error).toBeNull();
   });
 
@@ -122,6 +139,7 @@ describe("useWalletTokens", () => {
     mockUseConnection.mockReturnValue({
       connection: {
         getParsedTokenAccountsByOwner: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+        getBalance: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
       },
     });
     mockUseWallet.mockReturnValue({ publicKey: WALLET_PUBLIC_KEY });

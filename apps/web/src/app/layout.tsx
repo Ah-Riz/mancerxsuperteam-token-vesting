@@ -22,6 +22,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const analyticsEnabled = process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true";
   return (
     <html lang="en">
       <body suppressHydrationWarning>
@@ -30,7 +31,7 @@ export default function RootLayout({
             <WalletTokensProvider>{children}</WalletTokensProvider>
           </WalletProvider>
         </QueryProvider>
-        <Analytics />
+        {analyticsEnabled ? <Analytics /> : null}
       </body>
     </html>
   );

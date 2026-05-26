@@ -17,7 +17,7 @@ const faqs = [
   },
   {
     q: "Is the code open source?",
-    a: "Yes. The codebase is open on GitHub, and independent security audits are planned before mainnet launch.",
+    a: "Yes. The codebase is open on GitHub, and an independent security audit is planned before mainnet launch.",
   },
 ];
 

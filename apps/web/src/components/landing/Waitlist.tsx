@@ -33,14 +33,14 @@ export function Waitlist() {
       const payload = (await response.json()) as { message?: string; error?: string };
 
       if (!response.ok) {
-        setError(payload.error ?? "Gagal menyimpan email.");
+        setError(payload.error ?? "Unable to save your email.");
         return;
       }
 
       setSubmitted(true);
       form.reset();
     } catch {
-      setError("Tidak bisa menghubungi server.");
+      setError("Unable to reach the server.");
     } finally {
       setSubmitting(false);
     }

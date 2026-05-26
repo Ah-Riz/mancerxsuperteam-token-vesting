@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useWrapSol } from "@/hooks/useWrapSol";
-import { useToast } from "@/components/shell/Toast";
 
 type Props = {
   isOpen: boolean;
@@ -12,10 +11,10 @@ type Props = {
 
 export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
   const { solBalance, wsolBalance, wrapSol, unwrapSol, isLoading, error, setError, fetchBalances } = useWrapSol();
-  const { toast } = useToast();
   const [mode, setMode] = useState<"wrap" | "unwrap">("wrap");
   const [amount, setAmount] = useState("");
   const [success, setSuccess] = useState<{ amount: string; sig?: string } | null>(null);
+  const closedRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -23,33 +22,35 @@ export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
       setAmount("");
       setError(null);
       setSuccess(null);
+      closedRef.current = false;
     }
   }, [isOpen, fetchBalances, setError]);
 
-  // Auto-close after success
   useEffect(() => {
     if (!success) return;
     const timer = setTimeout(() => {
-      onSuccess();
-      toast("wSOL is ready! Select it from the token list.", "success");
+      if (!closedRef.current) {
+        closedRef.current = true;
+        onSuccess();
+      }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [success, onSuccess, toast]);
+  }, [success]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
   const numAmount = Number(amount) || 0;
-  const canSubmit = mode === "wrap" ? numAmount > 0 && numAmount <= solBalance - 0.003 : wsolBalance > 0;
+  const canSubmit = mode === "wrap"
+    ? numAmount > 0 && numAmount <= solBalance - 0.003
+    : numAmount > 0 && numAmount <= wsolBalance;
 
   async function handleSubmit() {
     if (mode === "wrap") {
       const ok = await wrapSol(numAmount);
       if (ok) setSuccess({ amount: String(numAmount) });
     } else {
-      const ok = await unwrapSol();
-      if (ok) {
-        setSuccess({ amount: String(wsolBalance) });
-      }
+      const ok = await unwrapSol(numAmount);
+      if (ok) setSuccess({ amount: String(numAmount) });
     }
   }
 
@@ -72,9 +73,9 @@ export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
 
         {/* Description */}
         <p className="mt-3 text-[13px] leading-5 text-[#6b7280]">
-          This vesting program only works with SPL tokens, so you have to first wrap SOL to{" "}
+          SOL is automatically wrapped when creating a stream. Use this tool if you want to manually manage your{" "}
           <a href="https://solscan.io/token/So11111111111111111111111111111111111111112?cluster=devnet" target="_blank" rel="noopener noreferrer" className="text-[#f97316] underline">wSOL</a>{" "}
-          first.
+          balance.
         </p>
 
         <div className="my-4 border-t border-white/[0.08]" />
@@ -96,16 +97,16 @@ export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
           <>
             {/* Mode Toggle */}
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-[#6b7280]">Convert SOL to wSOL</span>
+              <span className="text-[13px] text-[#6b7280]">{mode === "wrap" ? "Convert SOL → wSOL" : "Convert wSOL → SOL"}</span>
               <div className="flex gap-1 rounded-lg bg-[#12141c] p-1">
                 <button
-                  onClick={() => { setMode("wrap"); setError(null); }}
+                  onClick={() => { setMode("wrap"); setAmount(""); setError(null); }}
                   className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition ${mode === "wrap" ? "bg-[#2a2d3a] text-white" : "text-[#6b7280]"}`}
                 >
-                  Wrap ✓
+                  Wrap
                 </button>
                 <button
-                  onClick={() => { setMode("unwrap"); setError(null); }}
+                  onClick={() => { setMode("unwrap"); setAmount(""); setError(null); }}
                   className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition ${mode === "unwrap" ? "bg-[#2a2d3a] text-white" : "text-[#6b7280]"}`}
                 >
                   Unwrap
@@ -113,36 +114,40 @@ export function WrapSolModal({ isOpen, onClose, onSuccess }: Props) {
               </div>
             </div>
 
-            {/* Amount Input (Wrap mode) */}
-            {mode === "wrap" && (
-              <div className="mt-4">
-                <label className="text-[12px] font-medium text-[#6b7280]">Amount</label>
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#12141c] px-3 py-3">
-                  <input
-                    type="number"
-                    placeholder="0.0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    disabled={isLoading}
-                    className="flex-1 bg-transparent text-[16px] text-white outline-none placeholder:text-[#6b7280] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  />
-                  <div className="flex items-center gap-2">
-                    <svg width="16" height="16" viewBox="0 0 128 128" className="text-[#14F1D9]">
-                      <circle cx="64" cy="64" r="64" fill="currentColor" opacity="0.2" />
-                      <path d="M28 95h72l-12-12H40l-12 12zm0-31h72L88 52H40L28 64zm72-31H28l12 12h48l12-12z" fill="currentColor" />
-                    </svg>
-                    <span className="text-[13px] text-white">SOL</span>
-                    <button
-                      type="button"
-                      onClick={() => setAmount(String(Math.max(0, solBalance - 0.003).toFixed(4)))}
-                      className="text-[11px] text-[#f97316] hover:underline"
-                    >
-                      Max: {solBalance.toFixed(4)}
-                    </button>
-                  </div>
+            {/* Amount Input */}
+            <div className="mt-4">
+              <label className="text-[12px] font-medium text-[#6b7280]">Amount</label>
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#12141c] px-3 py-3">
+                <input
+                  type="number"
+                  placeholder="0.0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={isLoading}
+                  className="flex-1 bg-transparent text-[16px] text-white outline-none placeholder:text-[#6b7280] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <div className="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 128 128" className="text-[#14F1D9]">
+                    <circle cx="64" cy="64" r="64" fill="currentColor" opacity="0.2" />
+                    <path d="M28 95h72l-12-12H40l-12 12zm0-31h72L88 52H40L28 64zm72-31H28l12 12h48l12-12z" fill="currentColor" />
+                  </svg>
+                  <span className="text-[13px] text-white">{mode === "wrap" ? "SOL" : "wSOL"}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (mode === "wrap") {
+                        setAmount(String(Math.max(0, solBalance - 0.003).toFixed(4)));
+                      } else {
+                        setAmount(String(wsolBalance.toFixed(4)));
+                      }
+                    }}
+                    className="text-[11px] text-[#f97316] hover:underline"
+                  >
+                    Max: {mode === "wrap" ? solBalance.toFixed(4) : wsolBalance.toFixed(4)}
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Balance Info */}
             <div className="mt-4 space-y-2 rounded-lg border border-white/[0.08] bg-[#12141c] p-3">
