@@ -1,5 +1,11 @@
 -- Row-level security: public read, writes via service role only
 
+CREATE TABLE IF NOT EXISTS waitlist (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL
+);
+
 ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE root_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leaves ENABLE ROW LEVEL SECURITY;

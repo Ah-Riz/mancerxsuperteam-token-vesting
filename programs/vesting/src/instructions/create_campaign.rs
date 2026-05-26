@@ -27,7 +27,7 @@ pub struct CreateCampaign<'info> {
     /// silent transfer-fee deductions. The constraint verifies the mint account
     /// is owned by the classic Token program rather than Token-2022.
     #[account(
-        constraint = mint.to_account_info().owner == token_program.key() @ VestingError::UnsupportedMint,
+        constraint = *mint.to_account_info().owner == token_program.key() @ VestingError::UnsupportedMint,
     )]
     pub mint: Account<'info, Mint>,
 
