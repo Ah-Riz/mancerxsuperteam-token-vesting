@@ -9,6 +9,7 @@ import {
   createAssociatedTokenAccountInstruction,
   createMint,
   getAccount,
+  TokenAccountNotFoundError,
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
@@ -4333,7 +4334,16 @@ describe("vesting supplementary T6-T25", () => {
       beneficiary.publicKey,
     );
 
-    const preBeneficiary = await getAccount(provider.connection, beneficiaryAta);
+    let preAmount = 0;
+    try {
+      const preBeneficiary = await getAccount(
+        provider.connection,
+        beneficiaryAta,
+      );
+      preAmount = Number(preBeneficiary.amount);
+    } catch (err) {
+      if (!(err instanceof TokenAccountNotFoundError)) throw err;
+    }
 
     await program.methods
       .claim(idlLeaf(leaf), idlProof(tree.proof(0)))
@@ -4350,9 +4360,7 @@ describe("vesting supplementary T6-T25", () => {
       .rpc();
 
     const postBeneficiary = await getAccount(provider.connection, beneficiaryAta);
-    expect(
-      Number(postBeneficiary.amount) - Number(preBeneficiary.amount),
-    ).to.equal(expectedVested);
+    expect(Number(postBeneficiary.amount) - preAmount).to.equal(expectedVested);
   });
 
   // -------------------------------------------------------------------------

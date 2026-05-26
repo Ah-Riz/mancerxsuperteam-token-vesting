@@ -11,6 +11,7 @@
  */
 
 import { PublicKey, Keypair } from "@solana/web3.js";
+import nacl from "tweetnacl";
 import BN from "bn.js";
 
 // clients/ts — reference merkle implementation
@@ -181,7 +182,7 @@ async function createAuthHeader(
     wallet: creator.publicKey.toBase58(),
   };
   const messageBytes = Buffer.from(JSON.stringify(message), "utf8");
-  const signature = creator.sign(messageBytes);
+  const signature = nacl.sign.detached(messageBytes, creator.secretKey);
   const token = `${Buffer.from(signature).toString("base64")}.${messageBytes.toString("base64")}`;
   return `Bearer ${token}`;
 }
@@ -357,10 +358,11 @@ async function main(): Promise<void> {
   try {
     postRes = await postCampaign(prepared, recipients);
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     const msg =
       err instanceof DOMException && err.name === "AbortError"
         ? `Timed out after ${TIMEOUT_MS}ms — server may be cold-starting. Try --timeout 30000`
-        : `Connection failed — is the dev server running at ${BASE_URL}? (cd apps/web && pnpm dev)`;
+        : `Request failed: ${detail}`;
     fail("POST /api/campaigns", msg);
     recordSummary("POST", "FAIL", msg);
     printSummaryTable();
