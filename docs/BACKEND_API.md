@@ -262,6 +262,28 @@ For `create_campaign`: leafCount=N, leaves array has N entries with full proofs.
 
 ---
 
+## 3.1. F1-F4 API Routes
+
+Routes added by F1 (Bulk Send), F2 (Dashboard Transparency), F3 (Clawback), and F4 (Hardening) phases.
+
+| Route | Method | Purpose | Auth |
+|-------|--------|---------|------|
+| `/api/campaigns/prepare` | POST | Build Merkle tree server-side (F1) | `x-admin-key` |
+| `/api/campaigns/import` | POST | CSV import of beneficiaries (F1) | `x-admin-key` |
+| `/api/campaigns/[treeAddress]/timeline` | GET | Event timeline — cancel, pause, withdraw, milestone, root-update, stream-cancel (F2) | Public |
+| `/api/beneficiary/[address]/vesting-progress` | GET | Vesting progress for beneficiary across campaigns (F2) | Public |
+| `/api/cron/sync` | GET | Auto-sync cron — indexer event processing (F2, 5-min interval) | `x-api-key` |
+| `/api/campaigns/[treeAddress]/cancel` | POST | Cancel campaign — freezes curve, starts 7-day grace (F3) | `x-admin-key` |
+| `/api/campaigns/[treeAddress]/withdraw-unvested` | POST | Withdraw unvested tokens after grace period (F3) | `x-admin-key` |
+| `/api/campaigns/[treeAddress]/cancel-stream` | POST | Cancel single stream — vested to beneficiary, rest to creator (F3) | `x-admin-key` |
+| `/api/campaigns/[treeAddress]/milestones/[idx]` | POST | Release milestone flag for indexed milestone (F3) | `x-admin-key` |
+| `/api/simulate-vesting` | POST | Vesting simulation — linear/cliff/milestone with custom params (F4) | Public |
+| `/api/schedule-templates` | GET | Schedule presets — common vesting templates (F4) | Public |
+
+All routes return `X-API-Version: 1` header. Protected routes require `x-admin-key` or `x-api-key` header matching server-side secrets.
+
+---
+
 ## 4. Data Flows
 
 ### Campaign Creation (create_campaign / create_stream)
