@@ -4310,8 +4310,9 @@ describe("vesting supplementary T6-T25", () => {
     expect(treeAfterCancel.cancelledAt).to.not.be.null;
 
     const cancelledAt = treeAfterCancel.cancelledAt as BN;
+    // Use cancelledAt as `now` so simulate matches claim (effective_now = min(now, cancelled_at)).
     const expectedVested = await program.methods
-      .getVestedAmount(idlLeaf(leaf), cancelledAt, new BN(t.now), null)
+      .getVestedAmount(idlLeaf(leaf), cancelledAt, cancelledAt, null)
       .simulate()
       .then((result: { raw?: string[] }) => {
         const raw = result.raw ?? [];
