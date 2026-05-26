@@ -21,15 +21,17 @@ export function LandingPage() {
       <Topbar />
       <Hero />
       <Partners />
-      <CampaignPreview />
-      <Pillars />
-      <HowItWorks />
-      <Stats />
-      <UseCases />
-      <Demo />
-      <CallToAction />
-      <FAQ />
-      <Waitlist />
+      <div className="lp-content-zone">
+        <CampaignPreview />
+        <Pillars />
+        <HowItWorks />
+        <Stats />
+        <UseCases />
+        <Demo />
+        <CallToAction />
+        <FAQ />
+        <Waitlist />
+      </div>
       <Footer />
       <ScrollReveal />
     </>

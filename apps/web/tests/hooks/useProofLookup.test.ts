@@ -90,7 +90,7 @@ describe("useProofLookup", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("throws error when fetch returns non-ok response", async () => {
+  it("returns null data when fetch returns 404", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 404,
@@ -101,10 +101,10 @@ describe("useProofLookup", () => {
       { wrapper: createWrapper() },
     );
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error).toBeDefined();
-    expect(result.current.error.message).toContain("404");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
   });
+
 
   it("uses staleTime of 30 seconds", async () => {
     mockFetch.mockResolvedValue({

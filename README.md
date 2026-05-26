@@ -32,36 +32,43 @@ velthoryn/
 
 ## Current status
 
-**Fully implemented and deployed to devnet.** All **14** instruction handlers (including `create_stream`, `withdraw`, `set_milestone_released`, and `cancel_stream`), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (34 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder.
+**Fully implemented and deployed to devnet.** All **17** instruction handlers (14 SPL + 3 native SOL variants), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (36 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder. Native SOL vesting supports campaigns in raw SOL without wrapping to wSOL — see [`docs/NATIVE_SOL_VESTING.md`](docs/NATIVE_SOL_VESTING.md).
 
-**Test results: 86/86 SC tests PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
+**F1-F4 roadmap complete:** F1 Bulk Send (server-side Merkle build, CSV import), F2 Dashboard Transparency (event timeline, vesting progress, auto-sync cron), F3 Clawback (cancel campaign/stream, withdraw unvested, milestone release), F4 Production Hardening (Sentry monitoring, API versioning, vesting simulation, schedule templates). 11 new API routes, 6 event tables, 8 bug fixes from code review.
+
+**Test results: 99 SC tests (86 SPL + 12 native SOL + 1 Token-2022 guard) PASS** (`pnpm test:localnet`); **~557/557 web Vitest PASS** (API routes use real Postgres in CI; includes 129 F1-F4 tests)
 **BE–SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) through prepare → POST (all leaves verified) → GET proof → verify. RLS on all Supabase tables. **Bootcamp acceptance: 8/8** — see [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md).
-- Devnet (`pnpm test:devnet`): **86 passing, 1 pending** (T68 clock warp; cancel logic covered by T64b–T64d)
+- Devnet (`pnpm test:devnet`): **93 passing, 9 pending** (T64–T68 bankrun-only; cancel logic covered by T64b–T64d)
+- Native SOL tests: `tests/vesting-native-sol.spec.ts` via **solana-bankrun** (12 tests covering full SOL lifecycle)
 - Clock-dependent cases: `tests/vesting.clock.spec.ts` via **solana-bankrun** (T17–T20, T25, T47, T55–T64, EXPLOIT 4)
 
 See [`docs/STREAM_MODEL.md`](docs/STREAM_MODEL.md) (tutorial `Stream` PDA vs campaign model) and [`docs/ERROR_MAP.md`](docs/ERROR_MAP.md).
 
-| Instruction          | Role                                                              |
-| -------------------- | ----------------------------------------------------------------- |
-| `create_campaign`    | Initialize a vesting tree (Merkle root, supply, authorities).     |
-| `create_stream`      | Atomic single-recipient campaign creation + funding in one tx.    |
-| `fund_campaign`      | Creator deposits SPL tokens into the campaign vault.              |
-| `claim`              | Recipient claims vested portion against a Merkle proof.           |
-| `withdraw`           | Simplified claim for single-recipient streams (no Merkle proof).  |
-| `cancel_campaign`    | Cancel authority freezes the curve and starts a 7-day grace.      |
-| `update_root`        | Rotate the Merkle root to add/remove/adjust recipients.           |
-| `withdraw_unvested`  | Creator sweeps unvested tokens after the grace window.            |
-| `pause_campaign`     | Temporarily block claims.                                         |
-| `unpause_campaign`   | Resume a paused campaign.                                         |
-| `close_claim_record` | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
-| `get_vested_amount`  | Read-only helper that runs the schedule math against a leaf.      |
+| Instruction              | Role                                                              |
+| ------------------------ | ----------------------------------------------------------------- |
+| `create_campaign`        | Initialize a vesting tree (Merkle root, supply, authorities).     |
+| `create_campaign_native` | Same for native SOL — PDA holds lamports directly, no vault ATA.  |
+| `create_stream`          | Atomic single-recipient campaign creation + SPL funding in one tx. |
+| `create_stream_native`   | Same for native SOL — `system_program::transfer` funds the PDA.   |
+| `fund_campaign`          | Creator deposits SPL tokens into the campaign vault.              |
+| `fund_campaign_native`   | Same for native SOL — SOL transfer to PDA via system CPI.         |
+| `claim`                  | Recipient claims vested portion against a Merkle proof (SPL + SOL). |
+| `withdraw`               | Simplified claim for single-recipient streams (SPL + SOL).        |
+| `cancel_campaign`        | Cancel authority freezes the curve and starts a 7-day grace.      |
+| `update_root`            | Rotate the Merkle root to add/remove/adjust recipients.           |
+| `withdraw_unvested`      | Creator sweeps unvested tokens after the grace window (SPL + SOL). |
+| `pause_campaign`         | Temporarily block claims.                                         |
+| `unpause_campaign`       | Resume a paused campaign.                                         |
+| `close_claim_record`     | Reclaim rent on a fully-claimed `ClaimRecord` PDA.                |
+| `get_vested_amount`      | Read-only helper that runs the schedule math against a leaf.      |
 | `set_milestone_released` | Creator sets a milestone flag before milestone unlock.        |
-| `cancel_stream`      | Creator-only single-leaf cancel: vested → beneficiary, rest → creator. Milestone-aware: released → full amount, unreleased → 0. |
+| `cancel_stream`          | Creator-only single-leaf cancel: vested → beneficiary, rest → creator (SPL + SOL). Milestone-aware. |
 
 For deeper reads:
 - [`docs/PROGRAM.md`](docs/PROGRAM.md) — program internals, file map, instruction surface, state layouts.
 - [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — frontend-track guide: program ID, IDL/types location, PDA derivations, Merkle helpers, sample calls.
-- [`docs/TESTING.md`](docs/TESTING.md) — how to run tests, clock-dependent tests, writing new tests.
+- [`docs/NATIVE_SOL_VESTING.md`](docs/NATIVE_SOL_VESTING.md) — native SOL vesting research: architecture, dual-path design, cost comparison, security considerations.
+- [`docs/TESTING.md`](docs/TESTING.md) — how to run tests, clock-dependent tests, native SOL tests, writing new tests.
 - [`docs/DEVNET_TEST_RESULTS.md`](docs/DEVNET_TEST_RESULTS.md) — full test results matrix with acceptance criteria.
 
 ## Prerequisites
@@ -93,7 +100,7 @@ solana-keygen new -o target/deploy/vesting-keypair.json --no-bip39-passphrase
 
 ```bash
 anchor build           # produces target/idl/vesting.json + target/types/vesting.ts
-pnpm test:localnet     # persistent validator — 86/86 passing (~3m)
+pnpm test:localnet     # persistent validator — 98/98 passing (~3m)
 pnpm test:devnet       # against devnet RPC (deployed program + funded wallet)
 ```
 
@@ -133,6 +140,17 @@ Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). 
 | `/api/campaigns/[treeAddress]/root-versions` | GET | Root version history |
 | `/api/beneficiary/[address]/campaigns` | GET | All campaigns for address |
 | `/api/admin/sync` | POST | Indexer: backfill claim events (auth: x-admin-key) |
+| `/api/campaigns/prepare` | POST | Build Merkle tree server-side (F1, auth: x-admin-key) |
+| `/api/campaigns/import` | POST | CSV import of beneficiaries (F1, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/timeline` | GET | Event timeline — cancel, pause, withdraw, milestone (F2) |
+| `/api/beneficiary/[address]/vesting-progress` | GET | Vesting progress for beneficiary (F2) |
+| `/api/cron/sync` | GET | Auto-sync cron — indexer event processing (F2, auth: x-api-key) |
+| `/api/campaigns/[treeAddress]/cancel` | POST | Cancel campaign, start grace period (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/withdraw-unvested` | POST | Withdraw unvested tokens after grace (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/cancel-stream` | POST | Cancel single stream (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/milestones/[idx]` | POST | Release milestone flag (F3, auth: x-admin-key) |
+| `/api/simulate-vesting` | POST | Vesting simulation — linear/cliff/milestone (F4) |
+| `/api/schedule-templates` | GET | Schedule presets — common vesting templates (F4) |
 
 All routes deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Supabase tables have Row Level Security enabled (read-public, write-service-role).
 
@@ -146,7 +164,7 @@ Frontend docs: [`docs/PRD_GERAL.md`](docs/PRD_GERAL.md), [`docs/PDD_GERAL.md`](d
 
 ## Devnet
 
-Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot **463874212** (~447KB allocation). Upgrade authority: wallet `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`.
+Program is deployed at `G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu`. Latest upgrade at slot **464782646** (~492KB allocation). Upgrade authority: wallet `GPfHeZtBna1rJmwam1yCcREhYnLcxWhBmUdDoVuL5Es6`.
 
 ```bash
 solana program show G6iaigUdi2btFwUc2N65twfxwA8Ew5uKKhKJ5RJa8wvu --url devnet
@@ -164,8 +182,8 @@ solana program deploy target/deploy/vesting.so --program-id G6iaigUdi2btFwUc2N65
 
 | Workflow | What it runs |
 |----------|----------------|
-| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + `pnpm test:localnet` (86 SC tests) |
-| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `drizzle-kit push`) |
+| [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + native SOL tests (bankrun) + `pnpm test:localnet` (98 SC tests) |
+| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `pnpm db:migrate`) |
 | [`web-ci.yml`](.github/workflows/web-ci.yml) | 3 parallel jobs: merkle parity, E2E pipeline (Postgres + dev server + `test-be-merkle-pipeline.ts`), web build + Vitest (Postgres) |
 
 All web jobs use `DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci` and host-aware SSL (TLS for Supabase, plain TCP for local CI Postgres).

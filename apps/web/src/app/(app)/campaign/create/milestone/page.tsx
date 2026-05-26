@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { datetimeLocalToUnix } from "@/lib/stream/datetime";
 import { validatePublicKey, validateAmountWithDecimals, hasErrors } from "@/lib/validation/stream-form";
-import { getMilestoneCampaignId } from "@/lib/campaign/milestone-ids";
-import { bulkCsvTemplateForType, parseBulkCsv, prepareBulkCampaign, type BulkCsvParseResult, type PreparedBulkCampaign } from "@/lib/campaign/bulk";
+import { bulkCsvTemplateForType, parseBulkCsv, prepareBulkCampaign, toRawAmount, type BulkCsvParseResult, type BulkCsvRow, type PreparedBulkCampaign } from "@/lib/campaign/bulk";
 import { useCreateCampaign } from "@/hooks/useCreateCampaign";
 import { useCreateStream, type CreateStreamResult } from "@/hooks/useCreateStream";
 import { useWalletTokens } from "@/hooks/useWalletTokens";
@@ -27,10 +26,8 @@ type TxState =
   | { type: "idle" }
   | { type: "loading"; label: string }
   | { type: "success"; results: CreateStreamResult[] }
-  | { type: "partial"; results: CreateStreamResult[]; total: number; errorMsg: string }
   | { type: "error"; msg: string }
   | { type: "bulk-ready"; prepared: PreparedBulkCampaign }
-  | { type: "bulk-created"; sig: string; treeAddress: string; totalSupply: string; prepared: PreparedBulkCampaign }
   | { type: "bulk-funded"; sig: string; treeAddress: string; prepared: PreparedBulkCampaign };
 
 type Mode = "single" | "bulk";
@@ -39,10 +36,17 @@ function newMilestone(): MilestoneEntry {
   return { id: crypto.randomUUID(), amount: "", unlockTime: "" };
 }
 
+function toWalletApprovalMessage(error: unknown, fallback: (err: unknown) => string) {
+  const formatted = fallback(error);
+  return formatted === "Transaction cancelled in wallet."
+    ? "Wallet approval did not complete."
+    : formatted;
+}
+
 export default function MilestoneCreatePage() {
   const { publicKey } = useWallet();
   const { createStream, formatVestingError } = useCreateStream();
-  const { createCampaign, fundCampaign, formatVestingError: formatCampaignError } = useCreateCampaign();
+  const { createAndFundCampaign, formatVestingError: formatCampaignError } = useCreateCampaign();
   const { tokens: walletTokens } = useWalletTokens();
   const { toast } = useToast();
 
@@ -50,6 +54,7 @@ export default function MilestoneCreatePage() {
   const [mode, setMode] = useState<Mode>("single");
   const [mintAddress, setMintAddress] = useState("");
   const [mintDecimals, setMintDecimals] = useState<number | null>(null);
+  const [useAutoWrap, setUseAutoWrap] = useState(false);
   const [cancellable, setCancellable] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [baseCampaignId] = useState(() => Math.floor(Date.now() / 1000) % 1000000);
@@ -66,15 +71,21 @@ export default function MilestoneCreatePage() {
 
   // Derived
   const tokenInfo = POPULAR_TOKENS.find((t) => t.mint === mintAddress);
+  const effectiveMintDecimals = tokenInfo?.decimals ?? mintDecimals;
   const tokenSymbol = tokenInfo?.symbol ?? (mintAddress ? mintAddress.slice(0, 4) : "");
-  const walletToken = walletTokens.find((t) => t.mintAddress === mintAddress);
+  const walletToken = tokenInfo?.isNativeSol
+    ? walletTokens.find((t) => t.isNativeSol)
+    : tokenInfo?.isWrappedSol
+    ? walletTokens.find((t) => t.mintAddress === mintAddress && !t.isNativeSol)
+    : walletTokens.find((t) => t.mintAddress === mintAddress && !t.isNativeSol) ?? walletTokens.find((t) => t.mintAddress === mintAddress);
   const tokenBalance = walletToken?.uiAmount ?? null;
   const totalAmount = milestones.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+  const manualCreatesCampaign = milestones.length > 1;
 
   // Bulk handlers
   function handleCsvParse() {
     if (!csvText.trim()) return;
-    const result = parseBulkCsv(csvText, mintDecimals);
+    const result = parseBulkCsv(csvText, effectiveMintDecimals);
     setCsvResult(result);
     if (result.issues.length === 0 && result.rows.length > 0) {
       setTxState({ type: "bulk-ready", prepared: prepareBulkCampaign(result.rows) });
@@ -85,44 +96,38 @@ export default function MilestoneCreatePage() {
 
   async function handleBulkCreate() {
     if (txState.type !== "bulk-ready") return;
-    setTxState({ type: "loading", label: "Creating campaign..." });
+    setTxState({ type: "loading", label: "Creating and funding campaign..." });
     try {
-      const result = await createCampaign({ mintAddress, campaignId: bulkCampaignId, prepared: txState.prepared, cancellable });
-      toast("Campaign created! Now fund the vault.", "success");
-      setTxState({ type: "bulk-created", sig: result.sig, treeAddress: result.treeAddress, totalSupply: result.totalSupply, prepared: txState.prepared });
+      const result = await createAndFundCampaign(
+        { mintAddress, campaignId: bulkCampaignId, prepared: txState.prepared, cancellable },
+        { autoWrap: useAutoWrap },
+      );
+      toast("Campaign created and funded!", "success");
+      setTxState({ type: "bulk-funded", sig: result.fundSig, treeAddress: result.treeAddress, prepared: txState.prepared });
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
-        toast("Transaction rejected", "error");
+        toast(toWalletApprovalMessage(error, formatCampaignError), "error");
         setTxState({ type: "bulk-ready", prepared: txState.prepared });
         return;
       }
       setTxState({ type: "error", msg: formatCampaignError(error) });
     }
   }
+  const prepared = txState.type === "bulk-ready" || txState.type === "bulk-funded" ? txState.prepared : null;
 
-  async function handleBulkFund() {
-    if (txState.type !== "bulk-created") return;
-    const currentState = txState;
-    setTxState({ type: "loading", label: "Funding vault..." });
-    try {
-      const result = await fundCampaign({ mintAddress, treeAddress: currentState.treeAddress, totalSupply: currentState.totalSupply });
-      toast("Campaign funded!", "success");
-      setTxState({ type: "bulk-funded", sig: result.sig, treeAddress: result.treeAddress, prepared: currentState.prepared });
-    } catch (error: unknown) {
-      if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
-        toast("Transaction rejected", "error");
-        setTxState(currentState);
-        return;
-      }
-      setTxState({ type: "error", msg: formatCampaignError(error) });
-    }
-  }
-
-  const prepared = txState.type === "bulk-ready" || txState.type === "bulk-created" || txState.type === "bulk-funded" ? txState.prepared : null;
-
-  function handleTokenSelect(mint: string, decimals: number) {
+  function handleTokenSelect(mint: string, decimals: number, autoWrap?: boolean) {
     setMintAddress(mint);
     setMintDecimals(decimals);
+    setUseAutoWrap(autoWrap ?? false);
+    if (mode === "bulk" && csvText.trim()) {
+      const result = parseBulkCsv(csvText, decimals);
+      setCsvResult(result);
+      if (result.issues.length === 0 && result.rows.length > 0) {
+        setTxState({ type: "bulk-ready", prepared: prepareBulkCampaign(result.rows) });
+      } else {
+        setTxState({ type: "idle" });
+      }
+    }
   }
 
   function updateMilestone(id: string, field: keyof MilestoneEntry, value: string) {
@@ -139,6 +144,24 @@ export default function MilestoneCreatePage() {
     setMilestones((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function buildMilestoneRows(): BulkCsvRow[] {
+    const now = Math.floor(Date.now() / 1000);
+    return milestones.map((m, index) => {
+      const unlockUnix = m.unlockTime ? datetimeLocalToUnix(m.unlockTime) : now + 60;
+      return {
+        rowNumber: index + 1,
+        beneficiary: recipient.trim(),
+        amountInput: m.amount.trim(),
+        amountRaw: effectiveMintDecimals !== null ? toRawAmount(m.amount.trim(), effectiveMintDecimals) : m.amount.trim(),
+        releaseType: 2,
+        startTime: now - 60,
+        cliffTime: unlockUnix,
+        endTime: unlockUnix,
+        milestoneIdx: index,
+      };
+    });
+  }
+
   async function handleSubmit() {
     if (!publicKey || !mintAddress) return;
 
@@ -148,56 +171,66 @@ export default function MilestoneCreatePage() {
     if (recipErr) errors.recipient = recipErr;
     for (let i = 0; i < milestones.length; i++) {
       const m = milestones[i];
-      const amtErr = validateAmountWithDecimals(m.amount, mintDecimals);
+      const amtErr = validateAmountWithDecimals(m.amount, effectiveMintDecimals);
       if (amtErr) errors[`amount_${i}`] = amtErr;
     }
     setFormErrors(errors);
     if (hasErrors(errors)) return;
 
-    setTxState({ type: "loading", label: `Creating milestone 1 of ${milestones.length}...` });
-    const results: CreateStreamResult[] = [];
+    // 2+ milestones → single campaign with N leaves
+    if (milestones.length > 1) {
+      setTxState({ type: "loading", label: `Creating campaign with ${milestones.length} milestones...` });
+      try {
+        const prepared = prepareBulkCampaign(buildMilestoneRows());
+        const result = await createAndFundCampaign(
+          { mintAddress, campaignId: String(baseCampaignId), prepared, cancellable },
+          { autoWrap: useAutoWrap },
+        );
+        toast("Milestone campaign created and funded!", "success");
+        setTxState({ type: "bulk-funded", sig: result.fundSig, treeAddress: result.treeAddress, prepared });
+        setMilestones([newMilestone()]);
+        setFormErrors({});
+      } catch (error: unknown) {
+        if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
+          toast("Transaction rejected", "error");
+          setTxState({ type: "idle" });
+          return;
+        }
+        setTxState({ type: "error", msg: formatCampaignError(error) });
+      }
+      return;
+    }
 
+    // 1 milestone → single stream
+    setTxState({ type: "loading", label: "Creating milestone stream..." });
     try {
       const now = Math.floor(Date.now() / 1000);
+      const m = milestones[0];
+      const unlockUnix = m.unlockTime ? datetimeLocalToUnix(m.unlockTime) : now + 60;
 
-      for (let i = 0; i < milestones.length; i++) {
-        setTxState({ type: "loading", label: `Creating milestone ${i + 1} of ${milestones.length}...` });
-        const m = milestones[i];
-        const unlockUnix = m.unlockTime ? datetimeLocalToUnix(m.unlockTime) : now + 60;
+      const result = await createStream({
+        beneficiary: recipient,
+        mintAddress,
+        amount: m.amount,
+        mintDecimals: effectiveMintDecimals,
+        campaignId: String(baseCampaignId),
+        releaseType: 2,
+        startTime: now - 60,
+        cliffTime: unlockUnix,
+        endTime: unlockUnix,
+        milestoneIdx: 0,
+        cancellable,
+        autoWrap: useAutoWrap,
+      });
 
-        const result = await createStream({
-          beneficiary: recipient,
-          mintAddress,
-          amount: m.amount,
-          mintDecimals,
-          campaignId: String(getMilestoneCampaignId(baseCampaignId, i)),
-          releaseType: 2,
-          startTime: now - 60,
-          cliffTime: unlockUnix,
-          endTime: unlockUnix,
-          milestoneIdx: i,
-          cancellable,
-        });
-        results.push(result);
-      }
-
-      toast(`${results.length} milestone stream(s) created!`, "success");
-      setTxState({ type: "success", results });
+      toast("Milestone stream created!", "success");
+      setTxState({ type: "success", results: [result] });
       setMilestones([newMilestone()]);
       setFormErrors({});
     } catch (error: unknown) {
       if (error instanceof Error && /User rejected|Connection rejected/i.test(error.message)) {
-        toast("Transaction rejected by wallet", "error");
-        if (results.length > 0) {
-          setTxState({ type: "partial", results, total: milestones.length, errorMsg: "User rejected" });
-        } else {
-          setTxState({ type: "idle" });
-        }
-        return;
-      }
-      if (results.length > 0) {
-        toast(`${results.length} of ${milestones.length} milestones created. Remaining failed.`, "error");
-        setTxState({ type: "partial", results, total: milestones.length, errorMsg: formatVestingError(error) });
+        toast("Transaction rejected", "error");
+        setTxState({ type: "idle" });
         return;
       }
       setTxState({ type: "error", msg: formatVestingError(error) });
@@ -239,31 +272,43 @@ export default function MilestoneCreatePage() {
                 onClick={() => { setMode("bulk"); setTxState({ type: "idle" }); }}
                 className={`flex-1 rounded-lg px-3 py-2.5 text-[12px] font-medium transition ${mode === "bulk" ? "bg-white/[0.1] text-white" : "text-[#8b92a5] hover:text-white"}`}
               >
-                Use CSV
+                CSV Campaign
               </button>
             </div>
 
             {/* Token */}
             <div>
               <label className={LABEL}>Token</label>
-              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} error={undefined} />
+              <TokenPickerButton mintAddress={mintAddress} onSelect={handleTokenSelect} autoWrap={useAutoWrap} error={undefined} />
             </div>
 
-            {/* Recipient */}
-            <Field
-              label="Recipient"
-              input={
-                <input
-                  type="text"
-                  placeholder="Solana wallet address..."
-                  value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
-                  className={`${INPUT} font-mono ${formErrors.recipient ? INPUT_ERR : ""}`}
-                />
-              }
-              error={formErrors.recipient}
-              hint="All milestones in this campaign go to this recipient"
-            />
+            {mode === "single" ? (
+              <Field
+                label={manualCreatesCampaign ? "Beneficiary for This Campaign" : "Recipient"}
+                input={
+                  <input
+                    type="text"
+                    placeholder="Solana wallet address..."
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                    className={`${INPUT} font-mono ${formErrors.recipient ? INPUT_ERR : ""}`}
+                  />
+                }
+                error={formErrors.recipient}
+                hint={
+                  manualCreatesCampaign
+                    ? "All milestone leaves in this campaign go to this one beneficiary."
+                    : "Wallet that can claim this milestone stream."
+                }
+              />
+            ) : (
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+                <p className="text-[12px] font-medium text-white">Recipients come from the CSV file</p>
+                <p className="mt-1 text-[12px] text-[#8b92a5]">
+                  Paste one or more beneficiary rows below. You do not need to enter a separate recipient here.
+                </p>
+              </div>
+            )}
 
             {/* Cancellation */}
             <ToggleCard checked={cancellable} onChange={setCancellable} title="Allow cancellation?" body="Creator can cancel and reclaim unvested tokens." />
@@ -277,7 +322,9 @@ export default function MilestoneCreatePage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/20 text-[11px] font-bold text-violet-400">{i}</span>
-                      <p className="text-[13px] font-medium text-white">Milestone #{i}</p>
+                      <p className="text-[13px] font-medium text-white">
+                        {manualCreatesCampaign ? `Campaign Milestone #${i}` : `Milestone #${i}`}
+                      </p>
                     </div>
                     <div className="flex gap-1.5">
                       <button type="button" onClick={() => duplicateMilestone(i)} className="rounded-md border border-white/[0.08] px-2 py-1 text-[10px] text-[#8b92a5] hover:text-white">
@@ -293,7 +340,7 @@ export default function MilestoneCreatePage() {
 
                   {/* Amount */}
                   <Field
-                    label={`Amount${mintDecimals !== null ? ` (${mintDecimals} decimals)` : ""}`}
+                    label={`Amount${effectiveMintDecimals !== null ? ` (${effectiveMintDecimals} decimals)` : ""}`}
                     input={
                       <div className="relative">
                         <input
@@ -329,19 +376,25 @@ export default function MilestoneCreatePage() {
                         className={INPUT}
                       />
                     }
-                    hint="Recipient can claim after this time AND creator triggers release. Defaults to now if empty."
+                    hint="Claim opens only after this time and after the creator releases the milestone. Defaults to now if empty."
                   />
                 </div>
               ))}
 
               {/* Add Milestone Button */}
-              <button
-                type="button"
-                onClick={() => setMilestones((prev) => [...prev, newMilestone()])}
-                className="w-full rounded-xl border border-dashed border-white/[0.12] py-3 text-[13px] font-medium text-[#8b92a5] transition hover:border-white/[0.2] hover:text-white"
-              >
-                + Add Milestone
-              </button>
+              {milestones.length >= 256 ? (
+                <p className="text-center text-[12px] text-amber-400/80">
+                  Maximum 256 milestones reached (on-chain bitmap limit).
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMilestones((prev) => [...prev, newMilestone()])}
+                  className="w-full rounded-xl border border-dashed border-white/[0.12] py-3 text-[13px] font-medium text-[#8b92a5] transition hover:border-white/[0.2] hover:text-white"
+                >
+                  + Add Milestone ({milestones.length}/256)
+                </button>
+              )}
             </>
           )}
 
@@ -350,7 +403,7 @@ export default function MilestoneCreatePage() {
             <BulkCsvSection
               mintAddress={mintAddress}
               onMintAddressChange={(v) => setMintAddress(v)}
-              mintDecimals={mintDecimals}
+              mintDecimals={effectiveMintDecimals}
               mintLoading={false}
               campaignId={bulkCampaignId}
               onCampaignIdChange={() => {}}
@@ -369,62 +422,47 @@ export default function MilestoneCreatePage() {
           {/* Results */}
           {txState.type === "success" && (
             <div className="space-y-3">
-              <p className="text-[13px] font-medium text-emerald-400">{txState.results.length} milestone stream(s) created!</p>
-              {txState.results.map((r, i) => (
-                <TxResultCard key={r.sig} title={`Milestone #${i}`} sig={r.sig} href={r.shareUrl} linkLabel="Open stream" />
+              <p className="text-[13px] font-medium text-emerald-400">Milestone stream created!</p>
+              {txState.results.map((r) => (
+                <TxResultCard key={r.sig} title="Milestone Stream" sig={r.sig} href={r.shareUrl} linkLabel="Open stream" />
               ))}
             </div>
           )}
-          {txState.type === "partial" && (
-            <div className={`${CARD} p-5 space-y-3`}>
-              <p className="text-[13px] font-medium text-amber-400">
-                Partial Success: {txState.results.length} of {txState.total} milestones created
-              </p>
-              <ul className="space-y-1">
-                {txState.results.map((r, i) => (
-                  <li key={r.sig} className="flex items-center gap-2 text-[11px]">
-                    <span className="text-emerald-400">✓</span>
-                    <span className="text-[#8b92a5]">Milestone #{i}</span>
-                    <a href={r.shareUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-white/70 underline">{r.sig.slice(0, 8)}…</a>
-                  </li>
-                ))}
-                {Array.from({ length: txState.total - txState.results.length }, (_, i) => (
-                  <li key={`failed-${i}`} className="flex items-center gap-2 text-[11px]">
-                    <span className="text-red-400">✗</span>
-                    <span className="text-[#8b92a5]">Milestone #{txState.results.length + i} — failed</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[11px] text-red-300">{txState.errorMsg}</p>
-            </div>
-          )}
           {txState.type === "error" && <ErrorCard title="Transaction Failed" body={txState.msg} />}
-          {txState.type === "bulk-created" && <TxResultCard title="Campaign created!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
-          {txState.type === "bulk-funded" && <TxResultCard title="Campaign funded!" sig={txState.sig} href={`/campaign/${txState.treeAddress}`} linkLabel="View campaign" />}
+          {txState.type === "bulk-funded" && (
+            <TxResultCard
+              title={`Campaign created — ${txState.prepared.leaves.length} milestones`}
+              sig={txState.sig}
+              href={`/campaign/${txState.treeAddress}`}
+              linkLabel="View campaign"
+            />
+          )}
         </div>
 
         {/* Sidebar */}
         <FormSummary
-          amount={mode === "single" ? String(totalAmount || "") : (prepared && mintDecimals !== null ? String(Number(prepared.totalSupply) / 10 ** mintDecimals) : (prepared?.totalSupply ?? "0"))}
+          amount={mode === "single" ? String(totalAmount || "") : (prepared && effectiveMintDecimals !== null ? String(Number(prepared.totalSupply) / 10 ** effectiveMintDecimals) : (prepared?.totalSupply ?? "0"))}
           tokenSymbol={tokenSymbol}
           tokenBalance={tokenBalance}
-          streamCount={1}
-          mode={mode === "single" ? "single" : "bulk"}
+          streamCount={mode === "single" ? milestones.length : 1}
+          mode={mode === "bulk" || manualCreatesCampaign ? "bulk" : "single"}
           submitLabel={
             mode === "bulk"
-              ? (txState.type === "bulk-created" ? "Step 2: Fund Vault" : "Step 1: Create Campaign")
-              : `Create ${milestones.length} Milestone${milestones.length > 1 ? "s" : ""}`
+              ? "Create & Fund Campaign"
+              : manualCreatesCampaign
+                ? `Create Campaign (${milestones.length} Milestones)`
+                : "Create Milestone Stream"
           }
           loading={txState.type === "loading"}
           disabled={
             mode === "single"
               ? !mintAddress || !recipient || milestones.some((m) => !m.amount)
-              : txState.type !== "bulk-ready" && txState.type !== "bulk-created"
+              : txState.type !== "bulk-ready"
           }
           onSubmit={
             mode === "single"
               ? handleSubmit
-              : txState.type === "bulk-created" ? handleBulkFund : handleBulkCreate
+              : handleBulkCreate
           }
         />
       </div>

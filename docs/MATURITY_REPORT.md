@@ -105,7 +105,7 @@ Velthoryn’s on-chain vesting program is **well documented** and **structurally
 
 - Privileged operations require explicit signers (`update_root.rs`, `pause_campaign.rs`, etc.).
 - Beneficiary binding before proof check on `claim`.
-- Eleven exploit tests in `tests/security.spec.ts`.
+- Twelve exploit tests in `tests/security.spec.ts` (EXPLOIT 12: pause+cancel grace lockout, fixed 2026-05).
 - Admin API uses timing-safe key compare via `verifyAdminKey()` (VEL-010).
 
 **Gaps**
@@ -158,7 +158,7 @@ Velthoryn’s on-chain vesting program is **well documented** and **structurally
 
 **Minor gaps**
 
-- `TESTING.md` updated to 11 security tests; keep in sync after test additions.
+- `TESTING.md` updated to 12 security tests; keep in sync after test additions.
 
 ---
 

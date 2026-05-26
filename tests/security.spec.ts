@@ -839,4 +839,84 @@ describe("security exploit attempts (should all be blocked)", () => {
       expectAnchorError(e, ERR.NothingToClaim);
     }
   });
+
+  // -------------------------------------------------------------------------
+  // EXPLOIT 12: pause → cancel must not lock beneficiaries out of grace claims
+  // -------------------------------------------------------------------------
+  it("EXPLOIT 12: pause then cancel then claim during grace succeeds", async () => {
+    const beneficiary = await makeBeneficiary(provider);
+    const AMOUNT = 1_000_000;
+
+    const t = await createTimeHelpers(provider.connection);
+    const cliff = t.past(500);
+    const end = t.future(500);
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(cliff),
+      cliffTime: new BN(cliff),
+      endTime: new BN(end),
+      milestoneIdx: 0,
+    };
+
+    const { mint, tree, treePda, vaultAuthPda, vault } =
+      await createAndFundCampaign(
+        { provider, program, creator, cancelAuthority, pauseAuthority },
+        712,
+        [leaf],
+        AMOUNT,
+      );
+
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const treeAccount = await program.account.vestingTree.fetch(treePda);
+    expect(treeAccount.paused).to.equal(false);
+    expect(treeAccount.cancelledAt).to.not.be.null;
+
+    const beneficiaryAta = getAssociatedTokenAddressSync(
+      mint,
+      beneficiary.publicKey,
+    );
+    const [crPda] = await claimRecordPDA(
+      PROGRAM_ID,
+      treePda,
+      beneficiary.publicKey,
+    );
+
+    await program.methods
+      .claim(idlLeaf(leaf), idlProof(tree.proof(0)))
+      .accounts({
+        beneficiary: beneficiary.publicKey,
+        vestingTree: treePda,
+        claimRecord: crPda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        beneficiaryAta,
+        mint,
+      })
+      .signers([beneficiary])
+      .rpc();
+
+    const postBeneficiary = await getAccount(provider.connection, beneficiaryAta);
+    expect(Number(postBeneficiary.amount)).to.be.greaterThan(0);
+  });
 });
