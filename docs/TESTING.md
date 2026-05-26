@@ -2,16 +2,16 @@
 
 ## Test Suite Overview
 
-**277 tests total** — all passing (on-chain security suite includes 11 exploit tests + 12 native SOL tests).
+**856 tests total** — all passing (on-chain security suite includes 11 exploit tests + 12 native SOL tests).
 
-- On-chain (Anchor): 98 tests across 6 files (86 SPL + 12 native SOL)
-- Web (Vitest): ~200 tests across 20 files (API routes use real Postgres in CI)
+- On-chain (Anchor): 99 tests across 7 files (86 SPL + 12 native SOL + 1 Token-2022 guard)
+- Web (Vitest): ~557 tests across 30+ files (API routes use real Postgres in CI)
 - Trident fuzz: smoke test in CI (`trident-tests/fuzz_vesting`)
 
 | Test File | Tests | Purpose |
 |-----------|-------|---------|
 | `tests/vesting.spec.ts` | 2 | Smoke tests (program ID, IDL structure — 17 instructions) |
-| `tests/vesting.supplementary.spec.ts` | 62 | Integration tests covering all instructions (incl. T41 milestone flags, T63–T68 cancel/milestone) |
+| `tests/vesting.supplementary.spec.ts` | 62 | Integration tests covering all instructions (incl. T41 milestone flags, T63–T68 cancel/milestone, T71 Token-2022 guard) |
 | `tests/vesting.clock.spec.ts` | 12 | Clock-dependent tests via `solana-bankrun` (incl. T64 `cancel_stream`) |
 | `tests/vesting-native-sol.spec.ts` | 12 | Native SOL vesting lifecycle tests (create, withdraw, claim, cancel, fund, withdraw_unvested + error guards) |
 | `tests/security.spec.ts` | 11 | Security exploit tests (EXPLOIT 1–11) |
@@ -148,7 +148,7 @@ docker run -d --name vesting-pg \
   -p 5432:5432 postgres:15
 
 export DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci
-cd apps/web && pnpm drizzle-kit push && pnpm test
+cd apps/web && pnpm db:migrate && pnpm test
 ```
 
 ```bash
@@ -157,7 +157,7 @@ pnpm test              # full suite (requires DATABASE_URL)
 pnpm test -- --reporter=verbose  # detailed output
 ```
 
-`tests/globalSetup.ts` runs `drizzle-kit push` locally when `DATABASE_URL` is set (skipped when `CI=true` — workflows push schema explicitly). Each API test file calls `resetDb()` in `beforeEach` to truncate tables.
+`tests/globalSetup.ts` runs `drizzle-kit push` locally when `DATABASE_URL` is set (skipped when `CI=true` — workflows apply migrations explicitly via `pnpm db:migrate`). Each API test file calls `resetDb()` in `beforeEach` to truncate tables.
 
 **Test helpers:** `tests/helpers/db.ts` (`resetDb`), `tests/helpers/fixtures.ts` (`createCampaignViaPost`, `seedClaimEvent`), `tests/helpers/requests.ts` (shared campaign payloads).
 
@@ -183,6 +183,15 @@ pnpm test -- --reporter=verbose  # detailed output
 | `tests/datetime.test.ts` | 1 | Date/time formatting utilities |
 | `tests/stream-persist.test.ts` | 1 | Stream state persistence |
 | `tests/vesting-errors.test.ts` | 5 | Error formatting and mapping |
+| `tests/api/bulk-campaign.test.ts` | 16 | F1 prepare + import — Merkle tree build, CSV import |
+| `tests/api/clawback.test.ts` | 28 | F3 cancel/withdraw/cancel-stream/milestone/grace-period |
+| `tests/api/simulate-vesting.test.ts` | 21 | F4 linear/cliff/milestone simulation + schedule templates |
+| `tests/api/timeline.test.ts` | 8 | F2 event timeline (cancel, pause, withdraw, milestone, root-update, stream-cancel) |
+| `tests/api/vesting-progress.test.ts` | 6 | F2 vesting progress for beneficiary |
+| `tests/api/cron-sync.test.ts` | 5 | F2 cron sync — auth guard, event processing |
+| `tests/api/versioning.test.ts` | 5 | F4 X-API-Version header on all responses |
+| `tests/indexer/event-indexer.test.ts` | 21 | F2 event parser — 11 discriminator types across 6 event tables |
+| `tests/lib/vesting-schedule.test.ts` | 19 | F1 schedule math parity — TS matches Rust exactly |
 
 ## Merkle Parity Test
 

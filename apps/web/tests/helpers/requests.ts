@@ -1,5 +1,8 @@
 import { Keypair } from "@solana/web3.js";
+import { NextRequest } from "next/server";
 import { hashLeaf, VestingMerkleTree } from "@/lib/merkle/builder";
+import { createAuthHeader } from "./wallet-auth";
+import { resetRedisForTests } from "@/lib/api/redis";
 
 export const CREATOR = "11111111111111111111111111111112";
 export const MINT = "11111111111111111111111111111114";
@@ -7,6 +10,10 @@ export const BENEFICIARY = "11111111111111111111111111111111";
 export const OTHER_BENEFICIARY = "22222222222222222222222222222222";
 
 export const EMPTY_SIBLING = new Array(32).fill(0) as number[];
+
+function uniqueOnChainCampaignId(): number {
+  return Math.floor(Math.random() * 9_000_000_000_000) + 1_000_000_000_000;
+}
 
 export function makeLeaf(overrides: Record<string, unknown> = {}) {
   return {
@@ -26,24 +33,27 @@ export function makeLeaf(overrides: Record<string, unknown> = {}) {
 export function makeCampaignBody(overrides: Record<string, unknown> = {}) {
   const treeAddress =
     (overrides.treeAddress as string | undefined) ?? "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  const campaignId =
+    (overrides.campaignId as number | undefined) ?? uniqueOnChainCampaignId();
+
   return {
     treeAddress,
     creator: CREATOR,
     mint: MINT,
-    campaignId: 1,
     merkleRoot: "a".repeat(64),
     leafCount: 1,
     totalSupply: "1000000",
     cancellable: false,
     cancelAuthority: null,
     pauseAuthority: null,
-    createdAt: 1700000000,
+    createdAt: Math.floor(Date.now() / 1000),
     metadata: undefined as
       | { name?: string; description?: string; logoUri?: string }
       | undefined,
     ipfsCid: undefined as string | undefined,
     leaves: [makeLeaf()],
     ...overrides,
+    campaignId,
   };
 }
 
@@ -135,4 +145,17 @@ export function makeUrl(path: string, params?: Record<string, string>): string {
   if (!params) return base;
   const qs = new URLSearchParams(params).toString();
   return `${base}?${qs}`;
+}
+
+export async function makeAuthenticatedPostRequest(
+  path: string,
+  body: unknown,
+): Promise<NextRequest> {
+  resetRedisForTests();
+  const authorization = await createAuthHeader();
+  return new NextRequest(makeUrl(path), {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { authorization, "content-type": "application/json" },
+  });
 }

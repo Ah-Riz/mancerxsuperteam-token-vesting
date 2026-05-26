@@ -71,7 +71,10 @@ pub fn handler(ctx: Context<Withdraw>, args: WithdrawArgs) -> Result<()> {
     let tree = &ctx.accounts.vesting_tree;
     let tree_key = tree.key();
 
-    require!(!tree.paused, VestingError::CampaignPaused);
+    require!(
+        !tree.paused || tree.cancelled_at.is_some(),
+        VestingError::CampaignPaused
+    );
 
     let leaf = VestingLeaf {
         leaf_index: 0,

@@ -64,7 +64,11 @@ pub fn handler(ctx: Context<Claim>, leaf: VestingLeaf, proof: Vec<[u8; 32]>) -> 
     let tree_key = tree.key();
 
     // Validation order per SECURITY.md section 2.3
-    require!(!tree.paused, VestingError::CampaignPaused);
+    // Defense in depth: cancelled campaigns may claim during grace even if paused was not cleared.
+    require!(
+        !tree.paused || tree.cancelled_at.is_some(),
+        VestingError::CampaignPaused
+    );
     require!(
         ctx.accounts.beneficiary.key() == leaf.beneficiary,
         VestingError::UnauthorizedClaimer

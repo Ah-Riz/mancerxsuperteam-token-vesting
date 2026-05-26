@@ -1,33 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonResponse } from "@/lib/api/json-response";
-import { verifyAdminKey } from "@/lib/auth";
-import { syncClaimEvents } from "@/lib/indexer/claim-events";
+import { indexAllEvents } from "@/lib/indexer/event-indexer";
+import { withRoute } from "@/lib/api/route-wrapper";
 
-export async function POST(request: NextRequest) {
-  const authError = verifyAdminKey(request);
-  if (authError) {
-    return authError;
-  }
-
+async function postAdminSyncHandler(request: NextRequest) {
+  let fromSlot: number | undefined;
   try {
-    let fromSlot: number | undefined;
-    try {
-      const body = await request.json();
-      if (typeof body.fromSlot === "number") {
-        fromSlot = body.fromSlot;
-      }
-    } catch {
-      // empty body is fine
+    const body = await request.json();
+    if (typeof body.fromSlot === "number") {
+      fromSlot = body.fromSlot;
     }
-
-    const { processed, lastSlot } = await syncClaimEvents(fromSlot);
-
-    return jsonResponse({ ok: true, processed, lastSlot });
-  } catch (error) {
-    console.error("[POST /api/admin/sync] Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+  } catch {
+    // empty body is fine
   }
+
+  const { processed, lastSlot, byType } = await indexAllEvents(fromSlot);
+  return jsonResponse({ ok: true, processed, lastSlot, byType });
 }
+
+export const POST = withRoute(
+  {
+    admin: true,
+    rateLimit: { requests: 3, window: 60 },
+  },
+  postAdminSyncHandler,
+);

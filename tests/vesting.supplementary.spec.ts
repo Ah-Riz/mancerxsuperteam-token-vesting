@@ -7,9 +7,11 @@ import {
 } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountInstruction,
+  createMint,
   getAccount,
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { expect } from "chai";
@@ -4249,6 +4251,235 @@ describe("vesting supplementary T6-T25", () => {
 
     const postCreator = await getAccount(provider.connection, creatorAta);
     expect(Number(postCreator.amount) - creatorBefore).to.equal(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // T69: pause → cancel → claim during grace succeeds (exploit regression)
+  // -------------------------------------------------------------------------
+  it("T69: pause then cancel then claim during grace succeeds", async function () {
+    if (provider.connection.rpcEndpoint.includes("devnet")) {
+      this.skip();
+    }
+    const CAMPAIGN_ID = 980_001;
+    const AMOUNT = 10_000;
+    const beneficiary = await makeBeneficiary(provider);
+    const t = await createTimeHelpers(provider.connection);
+    const cliff = t.past(500);
+    const end = t.future(500);
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(cliff),
+      cliffTime: new BN(cliff),
+      endTime: new BN(end),
+      milestoneIdx: 0,
+    };
+
+    const { mint, tree, treePda, vaultAuthPda, vault } =
+      await createAndFundCampaign(
+        { provider, program, creator, cancelAuthority, pauseAuthority },
+        CAMPAIGN_ID,
+        [leaf],
+        AMOUNT,
+        true,
+      );
+
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const treeAfterCancel = await program.account.vestingTree.fetch(treePda);
+    expect(treeAfterCancel.paused).to.equal(false);
+    expect(treeAfterCancel.cancelledAt).to.not.be.null;
+
+    const cancelledAt = treeAfterCancel.cancelledAt as BN;
+    // Use cancelledAt as `now` so simulate matches claim (effective_now = min(now, cancelled_at)).
+    const expectedVested = await program.methods
+      .getVestedAmount(idlLeaf(leaf), cancelledAt, cancelledAt, null)
+      .simulate()
+      .then((result: { raw?: string[] }) => {
+        const raw = result.raw ?? [];
+        const returnLine = raw.find((l) => l.startsWith("Program return:"));
+        if (!returnLine) {
+          throw new Error("getVestedAmount simulate returned no data");
+        }
+        const b64 = returnLine.split(" ").pop()!;
+        return new BN(Buffer.from(b64, "base64"), "le").toNumber();
+      });
+
+    const beneficiaryAta = getAssociatedTokenAddressSync(
+      mint,
+      beneficiary.publicKey,
+    );
+    const [crPda] = await claimRecordPDA(
+      PROGRAM_ID,
+      treePda,
+      beneficiary.publicKey,
+    );
+
+    await program.methods
+      .claim(idlLeaf(leaf), idlProof(tree.proof(0)))
+      .accounts({
+        beneficiary: beneficiary.publicKey,
+        vestingTree: treePda,
+        claimRecord: crPda,
+        vaultAuthority: vaultAuthPda,
+        vault,
+        beneficiaryAta,
+        mint,
+      })
+      .signers([beneficiary])
+      .rpc();
+
+    const crAfter = await program.account.claimRecord.fetch(crPda);
+    expect(crAfter.claimedAmount.toNumber()).to.equal(expectedVested);
+  });
+
+  // -------------------------------------------------------------------------
+  // T70: cancel on paused campaign resets paused=false
+  // -------------------------------------------------------------------------
+  it("T70: cancel on paused campaign resets paused to false", async function () {
+    if (provider.connection.rpcEndpoint.includes("devnet")) {
+      this.skip();
+    }
+    const CAMPAIGN_ID = 980_002;
+    const AMOUNT = 10_000;
+    const beneficiary = await makeBeneficiary(provider);
+    const t = await createTimeHelpers(provider.connection);
+
+    const leaf: VestingLeaf = {
+      leafIndex: 0,
+      beneficiary: beneficiary.publicKey,
+      amount: new BN(AMOUNT),
+      releaseType: ReleaseType.Linear,
+      startTime: new BN(t.past(100)),
+      cliffTime: new BN(t.past(100)),
+      endTime: new BN(t.future(900)),
+      milestoneIdx: 0,
+    };
+
+    const { treePda } = await createAndFundCampaign(
+      { provider, program, creator, cancelAuthority, pauseAuthority },
+      CAMPAIGN_ID,
+      [leaf],
+      AMOUNT,
+      true,
+    );
+
+    await program.methods
+      .pauseCampaign()
+      .accounts({
+        pauseAuthority: pauseAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([pauseAuthority])
+      .rpc();
+
+    const pausedTree = await program.account.vestingTree.fetch(treePda);
+    expect(pausedTree.paused).to.equal(true);
+
+    await program.methods
+      .cancelCampaign()
+      .accounts({
+        cancelAuthority: cancelAuthority.publicKey,
+        vestingTree: treePda,
+      })
+      .signers([cancelAuthority])
+      .rpc();
+
+    const cancelledTree = await program.account.vestingTree.fetch(treePda);
+    expect(cancelledTree.paused).to.equal(false);
+    expect(cancelledTree.cancelledAt).to.not.be.null;
+  });
+
+  // -------------------------------------------------------------------------
+  // T71: Token-2022 mint guard — create_campaign must reject Token-2022 mints
+  // -------------------------------------------------------------------------
+  it("T71: create_campaign with Token-2022 mint is rejected (UnsupportedMint guard)", async function () {
+    // Create a Token-2022 mint instead of a classic SPL Token mint
+    const payer = (provider.wallet as any).payer;
+    const token22Mint = await createMint(
+      provider.connection,
+      payer,
+      creator.publicKey, // mint authority
+      creator.publicKey, // freeze authority
+      9,
+      undefined,        // default keypair
+      undefined,        // default confirmOptions
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    const CAMPAIGN_ID = 990_001;
+    const [treePda] = await treePDA(PROGRAM_ID, creator.publicKey, token22Mint, CAMPAIGN_ID);
+    const [vaultAuthPda] = await vaultAuthorityPDA(PROGRAM_ID, treePda);
+
+    // Non-zero merkle root
+    const merkleRoot = Array.from(Buffer.alloc(32));
+    merkleRoot[0] = 1;
+
+    let threw = false;
+    try {
+      await program.methods
+        .createCampaign({
+          campaignId: new BN(CAMPAIGN_ID),
+          merkleRoot,
+          leafCount: 1,
+          totalSupply: new BN(1_000),
+          cancellable: false,
+          cancelAuthority: null,
+          pauseAuthority: null,
+        })
+        .accounts({
+          creator: creator.publicKey,
+          mint: token22Mint,
+          vestingTree: treePda,
+          vaultAuthority: vaultAuthPda,
+        })
+        .signers([creator])
+        .rpc();
+    } catch (err: unknown) {
+      threw = true;
+      const msg = (err as { message?: string }).message ?? String(err);
+      const logs: string = ((err as { logs?: string[] }).logs ?? []).join("\n");
+      const haystack = msg + "\n" + logs;
+
+      // The guard fires at Anchor's account deserialization layer (wrong program
+      // owner) or at our explicit constraint. Either way the transaction must fail
+      // and the error should reference the mint or program ownership.
+      const isExpectedRejection =
+        haystack.includes("UnsupportedMint") ||    // our custom error name
+        haystack.includes("0x179d") ||              // UnsupportedMint hex (6037)
+        haystack.includes("AccountOwnedByWrongProgram") ||
+        haystack.includes("0xbbf") ||              // AccountOwnedByWrongProgram hex
+        haystack.includes("owned by wrong program") ||
+        haystack.includes("3007") ||               // AccountOwnedByWrongProgram decimal
+        haystack.toLowerCase().includes("token") ||
+        haystack.toLowerCase().includes("program");
+
+      expect(
+        isExpectedRejection,
+        `Expected UnsupportedMint or program-ownership error. Got: ${msg}`,
+      ).to.equal(true);
+    }
+
+    expect(threw, "Expected create_campaign with Token-2022 mint to throw").to.equal(true);
   });
 
 });

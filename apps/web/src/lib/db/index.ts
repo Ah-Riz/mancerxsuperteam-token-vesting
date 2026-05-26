@@ -30,14 +30,22 @@ export function sslOptionsForConnectionString(
   return { rejectUnauthorized: strict };
 }
 
+export function getPoolOptions(connectionString: string | undefined) {
+  const isProduction =
+    process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+
+  return {
+    max: isProduction ? 10 : 3,
+    keepalive: isProduction ? 30 : 0,
+    ssl: sslOptionsForConnectionString(connectionString),
+    idle_timeout: isProduction ? 20 : 1,
+    connect_timeout: isProduction ? 10 : 30,
+  };
+}
+
 const client = postgres(
   connectionString ?? "postgresql://unconfigured:unconfigured@localhost:1/unconfigured",
-  {
-    max: 3,
-    ssl: sslOptionsForConnectionString(connectionString),
-    idle_timeout: connectionString ? 20 : 1,
-    connect_timeout: 30,
-  },
+  getPoolOptions(connectionString),
 );
 
 export const db = drizzle(client, { schema });

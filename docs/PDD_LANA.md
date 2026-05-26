@@ -102,7 +102,7 @@ Three principles govern every design decision in this protocol:
 | **Created** | `VestingTree` account exists; vault ATA initialized | `create_campaign` executed successfully | Any `fund_campaign` call |
 | **Funded / Active** | `vault.amount > 0`, `cancelled_at == None`, `paused == false` | First `fund_campaign` | `pause_campaign` or `cancel_campaign` |
 | **Paused** | `paused == true` | `pause_campaign` by pause_authority | `unpause_campaign` by pause_authority |
-| **Cancelled** | `cancelled_at == Some(timestamp)` | `cancel_campaign` by cancel_authority | Terminal for this field; grace period begins immediately |
+| **Cancelled** | `cancelled_at == Some(timestamp)` | `cancel_campaign` by cancel_authority | Terminal for this field; grace period begins immediately; `paused` reset to `false` on cancel |
 | **Swept** | No distinct field; inferred from `cancelled_at.is_some()` AND `now >= cancelled_at + GRACE_PERIOD_SECS` AND vault is empty | `withdraw_unvested` after grace period expires | N/A — final state |
 
 Notes:

@@ -1,86 +1,69 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonResponse } from "@/lib/api/json-response";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, rootVersions, leaves } from "@/lib/db/schema";
 import { createRootVersionRequestSchema } from "@/lib/api/validators";
 import { verifyAllLeaves } from "@/lib/merkle/verify";
+import { NotFoundError, ValidationError } from "@/lib/api/errors";
+import { withRoute } from "@/lib/api/route-wrapper";
 
 function u64BigInt(value: string | number): bigint {
   return BigInt(value);
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/campaigns/:treeAddress/root-versions — root rotation
-// Creates a new root version with updated leaves.
-// ---------------------------------------------------------------------------
-
-export async function POST(
+async function postRootVersionHandler(
   request: NextRequest,
   { params }: { params: Promise<{ treeAddress: string }> },
 ) {
-  try {
-    const { treeAddress } = await params;
-    const body = await request.json();
-    const parsed = createRootVersionRequestSchema.safeParse(body);
+  const { treeAddress } = await params;
+  const body = await request.json();
+  const parsed = createRootVersionRequestSchema.safeParse(body);
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.issues },
-        { status: 400 },
-      );
-    }
+  if (!parsed.success) {
+    throw new ValidationError("Validation failed", parsed.error.issues);
+  }
 
-    const data = parsed.data;
+  const data = parsed.data;
+  const proofCheck = verifyAllLeaves(data.leaves, data.merkleRoot);
+  if (!proofCheck.ok) {
+    const leafSuffix =
+      proofCheck.leafIndex !== undefined
+        ? ` for leaf index ${proofCheck.leafIndex}`
+        : "";
+    throw new ValidationError(`${proofCheck.error}${leafSuffix}`);
+  }
 
-    const proofCheck = verifyAllLeaves(data.leaves, data.merkleRoot);
-    if (!proofCheck.ok) {
-      const leafSuffix =
-        proofCheck.leafIndex !== undefined
-          ? ` for leaf index ${proofCheck.leafIndex}`
-          : "";
-      return NextResponse.json(
-        { error: `${proofCheck.error}${leafSuffix}` },
-        { status: 400 },
-      );
-    }
+  const [campaign] = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(eq(campaigns.treeAddress, treeAddress))
+    .limit(1);
 
-    // Find campaign by tree_address
-    const [campaign] = await db
-      .select({ id: campaigns.id })
-      .from(campaigns)
-      .where(eq(campaigns.treeAddress, treeAddress))
-      .limit(1);
+  if (!campaign) {
+    throw new NotFoundError("Campaign");
+  }
 
-    if (!campaign) {
-      return NextResponse.json(
-        { error: "Campaign not found" },
-        { status: 404 },
-      );
-    }
-
-    // Get current max version
-    const [currentMax] = await db
+  const nextVersion = await db.transaction(async (tx) => {
+    const [currentMax] = await tx
       .select({ version: sql<number>`coalesce(max(${rootVersions.version}), 0)::int` })
       .from(rootVersions)
       .where(eq(rootVersions.campaignId, campaign.id));
 
-    const nextVersion = currentMax.version + 1;
+    const version = currentMax.version + 1;
 
-    // Insert new root version
-    const [insertedRootVersion] = await db
+    const [insertedRootVersion] = await tx
       .insert(rootVersions)
       .values({
         campaignId: campaign.id,
         merkleRoot: data.merkleRoot,
         leafCount: data.leafCount,
         ipfsCid: data.ipfsCid ?? null,
-        version: nextVersion,
+        version: version,
         createdAt: u64BigInt(Math.floor(Date.now() / 1000)),
       })
       .returning({ id: rootVersions.id });
 
-    // Insert new leaves
     const leafRows = data.leaves.map((leaf) => ({
       rootVersionId: insertedRootVersion.id,
       leafIndex: leaf.leafIndex,
@@ -95,11 +78,10 @@ export async function POST(
     }));
 
     if (leafRows.length > 0) {
-      await db.insert(leaves).values(leafRows);
+      await tx.insert(leaves).values(leafRows);
     }
 
-    // Update the campaign's current merkle root and leaf count
-    await db
+    await tx
       .update(campaigns)
       .set({
         merkleRoot: data.merkleRoot,
@@ -107,15 +89,17 @@ export async function POST(
       })
       .where(eq(campaigns.id, campaign.id));
 
-    return jsonResponse(
-      { ok: true, version: nextVersion },
-      { status: 201 },
-    );
-  } catch (error) {
-    console.error("[POST /api/campaigns/:treeAddress/root-versions] Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
-  }
+    return version;
+  });
+
+  return jsonResponse({ ok: true, version: nextVersion }, { status: 201 });
 }
+
+export const POST = withRoute(
+  {
+    auth: true,
+    rateLimit: { requests: 10, window: 60 },
+    bodyLimit: "root-versions",
+  },
+  postRootVersionHandler,
+);

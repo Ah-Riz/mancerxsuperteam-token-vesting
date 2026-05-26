@@ -34,7 +34,9 @@ velthoryn/
 
 **Fully implemented and deployed to devnet.** All **17** instruction handlers (14 SPL + 3 native SOL variants), schedule math (`vested`, `get_vested_amount`), and Merkle proof verification (`verify_merkle_proof`) are live with real logic. State structs, error codes (36 variants), and events (9 types) are fully defined. `leaf_hash()` is byte-verified against the TS encoder. Native SOL vesting supports campaigns in raw SOL without wrapping to wSOL — see [`docs/NATIVE_SOL_VESTING.md`](docs/NATIVE_SOL_VESTING.md).
 
-**Test results: 98 SC tests (86 SPL + 12 native SOL) PASS** (`pnpm test:localnet`); **~200/200 web Vitest PASS** (API routes use real Postgres in CI; hooks/merkle/math need no DB)
+**F1-F4 roadmap complete:** F1 Bulk Send (server-side Merkle build, CSV import), F2 Dashboard Transparency (event timeline, vesting progress, auto-sync cron), F3 Clawback (cancel campaign/stream, withdraw unvested, milestone release), F4 Production Hardening (Sentry monitoring, API versioning, vesting simulation, schedule templates). 11 new API routes, 6 event tables, 8 bug fixes from code review.
+
+**Test results: 99 SC tests (86 SPL + 12 native SOL + 1 Token-2022 guard) PASS** (`pnpm test:localnet`); **~557/557 web Vitest PASS** (API routes use real Postgres in CI; includes 129 F1-F4 tests)
 **BE–SC Merkle pipeline verified end-to-end**: 3-leaf campaigns (Cliff/Linear/Milestone) through prepare → POST (all leaves verified) → GET proof → verify. RLS on all Supabase tables. **Bootcamp acceptance: 8/8** — see [`docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md`](docs/BE-SC-MERKLE-ACCEPTANCE-STATUS.md).
 - Devnet (`pnpm test:devnet`): **93 passing, 9 pending** (T64–T68 bankrun-only; cancel logic covered by T64b–T64d)
 - Native SOL tests: `tests/vesting-native-sol.spec.ts` via **solana-bankrun** (12 tests covering full SOL lifecycle)
@@ -138,6 +140,17 @@ Wallet connection uses wallet-standard auto-detect (Phantom/Solflare/Backpack). 
 | `/api/campaigns/[treeAddress]/root-versions` | GET | Root version history |
 | `/api/beneficiary/[address]/campaigns` | GET | All campaigns for address |
 | `/api/admin/sync` | POST | Indexer: backfill claim events (auth: x-admin-key) |
+| `/api/campaigns/prepare` | POST | Build Merkle tree server-side (F1, auth: x-admin-key) |
+| `/api/campaigns/import` | POST | CSV import of beneficiaries (F1, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/timeline` | GET | Event timeline — cancel, pause, withdraw, milestone (F2) |
+| `/api/beneficiary/[address]/vesting-progress` | GET | Vesting progress for beneficiary (F2) |
+| `/api/cron/sync` | GET | Auto-sync cron — indexer event processing (F2, auth: x-api-key) |
+| `/api/campaigns/[treeAddress]/cancel` | POST | Cancel campaign, start grace period (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/withdraw-unvested` | POST | Withdraw unvested tokens after grace (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/cancel-stream` | POST | Cancel single stream (F3, auth: x-admin-key) |
+| `/api/campaigns/[treeAddress]/milestones/[idx]` | POST | Release milestone flag (F3, auth: x-admin-key) |
+| `/api/simulate-vesting` | POST | Vesting simulation — linear/cliff/milestone (F4) |
+| `/api/schedule-templates` | GET | Schedule presets — common vesting templates (F4) |
 
 All routes deployed at [velthoryn.vercel.app](https://velthoryn.vercel.app/). Supabase tables have Row Level Security enabled (read-public, write-service-role).
 
@@ -170,7 +183,7 @@ solana program deploy target/deploy/vesting.so --program-id G6iaigUdi2btFwUc2N65
 | Workflow | What it runs |
 |----------|----------------|
 | [`ci.yml`](.github/workflows/ci.yml) | `anchor build` + IDL drift check + native SOL tests (bankrun) + `pnpm test:localnet` (98 SC tests) |
-| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `drizzle-kit push`) |
+| [`lint.yml`](.github/workflows/lint.yml) | `cargo clippy`, Next.js lint, **Vitest + build** (Postgres 15 service + `pnpm db:migrate`) |
 | [`web-ci.yml`](.github/workflows/web-ci.yml) | 3 parallel jobs: merkle parity, E2E pipeline (Postgres + dev server + `test-be-merkle-pipeline.ts`), web build + Vitest (Postgres) |
 
 All web jobs use `DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci` and host-aware SSL (TLS for Supabase, plain TCP for local CI Postgres).
