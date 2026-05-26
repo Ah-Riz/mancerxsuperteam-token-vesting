@@ -1,5 +1,8 @@
 import { SmoothScrollLink } from "@/components/landing/SmoothScrollLink";
 
+const repoUrl = "https://github.com/Ah-Riz/mancerxsuperteam-token-vesting";
+const docsUrl = `${repoUrl}/tree/test/docs/PROGRAM.md`;
+
 /**
  * Hero - Landing page hero section with animated Aperture brand mark.
  * All animations use native SVG <animate> elements (no JS required).
@@ -12,9 +15,9 @@ export function Hero() {
         <div className="lp-hero-grid">
           <div className="lp-hero-left">
             <h1>
-              Precision Vesting,
+              Precision Vesting
               <br />
-              <em>with Zero Friction.</em>
+              <em>on Solana.</em>
             </h1>
             <p className="sub">
               Onchain vesting infrastructure, built for everyone. Teams, DAOs, and investors use Velthoryn to distribute tokens — automated, transparent, and trustless. 
@@ -23,12 +26,17 @@ export function Hero() {
               <SmoothScrollLink href="#waitlist" className="lp-btn primary">
                 Join waitlist <span className="arrow">&rarr;</span>
               </SmoothScrollLink>
-              <button className="lp-btn ghost" suppressHydrationWarning>
+              <a
+                href={docsUrl}
+                className="lp-btn ghost"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Read the docs
-              </button>
+              </a>
             </div>
             <div className="meta">
-              <div>Audit by Mr G and Mr L</div>
+              <div>Independent audit planned before mainnet</div>
               <div>
                 <i style={{ background: "var(--lp-violet-2)" }} />{" "}
                 <b>$0+</b> sent out so far
