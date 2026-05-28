@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useConnection } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useEffect, useState } from "react";
 
 const WalletMultiButton = dynamic(
@@ -36,12 +36,23 @@ function NetworkBadge() {
 }
 
 export function AppHeader() {
+  const { connected, publicKey } = useWallet();
+  const showE2eWallet =
+    connected &&
+    !!publicKey;
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#0b0d12]/80 px-6 backdrop-blur-xl">
       <div />
       <div className="flex items-center gap-3">
         <NetworkBadge />
-        <WalletMultiButton />
+        {showE2eWallet ? (
+          <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-mono text-[12px] text-white">
+            {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+          </div>
+        ) : (
+          <WalletMultiButton />
+        )}
       </div>
     </header>
   );

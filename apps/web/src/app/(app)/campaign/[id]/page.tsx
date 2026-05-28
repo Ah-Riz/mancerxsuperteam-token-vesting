@@ -12,10 +12,14 @@ import { useVestingProgram } from "@/hooks/useVestingProgram";
 import { useProofLookup } from "@/hooks/useProofLookup";
 import { useClaimRecord } from "@/hooks/useClaimRecord";
 import { useCampaignDetail } from "@/hooks/useCampaignDetail";
+import { useCreateCampaign } from "@/hooks/useCreateCampaign";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { unixToDatetimeLocal, datetimeLocalToUnix } from "@/lib/stream/datetime";
-import { loadStreamScheduleLocal } from "@/lib/stream/persist";
+import {
+  loadStreamScheduleLocal,
+  removePendingCampaignFundingLocal,
+} from "@/lib/stream/persist";
 import { CancelConfirmDialog } from "@/components/campaign/detail/CancelConfirmDialog";
 import { MilestoneStatusBadge } from "@/components/campaign/detail/MilestoneStatusBadge";
 import { PauseToggleButton } from "@/components/campaign/detail/PauseToggleButton";
@@ -26,6 +30,7 @@ import { CloseClaimRecordButton } from "@/components/campaign/detail/CloseClaimR
 import { WithdrawUnvestedButton } from "@/components/campaign/detail/WithdrawUnvestedButton";
 import { ClaimWithProofButton } from "@/components/campaign/detail/ClaimWithProofButton";
 import { VestingChart } from "@/components/campaign/detail/VestingChart";
+import { CampaignTimeline } from "@/components/campaign/detail/CampaignTimeline";
 import { useToast } from "@/components/shell/Toast";
 import {
   getVestingTypeLabel,
@@ -222,6 +227,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const { publicKey } = useWallet();
   const { connection } = useConnection();
   const program = useVestingProgram();
+  const { fundCampaign } = useCreateCampaign();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -251,6 +257,9 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
   const [txStatus, setTxStatus] = useState<
     { type: "idle" } | { type: "loading" } | { type: "success"; sig: string } | { type: "error"; msg: string }
+  >({ type: "idle" });
+  const [fundingStatus, setFundingStatus] = useState<
+    { type: "idle" } | { type: "loading" } | { type: "error"; msg: string }
   >({ type: "idle" });
 
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -635,15 +644,33 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
     return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
   }
 
+  function formatFundingAmount(raw: bigint): string {
+    if (!treeMint) return formatTokenAmount(raw);
+    const token = POPULAR_TOKENS.find((item) => item.mint === treeMint.toBase58());
+    const decimals = token?.decimals ?? (isNativeSol(treeMint) || isWrappedSol(treeMint) ? 9 : mintDecimals);
+    const symbol = token?.symbol ?? (isNativeSol(treeMint) ? "SOL" : isWrappedSol(treeMint) ? "wSOL" : "tokens");
+    if (decimals === null) return `${raw.toString()} ${symbol}`;
+    if (decimals === 0) return `${raw.toLocaleString()} ${symbol}`;
+    const divisor = 10n ** BigInt(decimals);
+    const whole = raw / divisor;
+    const frac = raw % divisor;
+    const fracStr = frac.toString().padStart(decimals, "0").slice(0, 6).replace(/0+$/, "");
+    return `${fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString()} ${symbol}`;
+  }
+
   const nowTs = BigInt(nowUnix);
   const totalSupply = treeState ? BigInt(treeState.totalSupply.toString()) : 0n;
-  const totalClaimed = treeState ? BigInt(treeState.totalClaimed.toString()) : 0n;
+  const treeTotalClaimed = treeState ? BigInt(treeState.totalClaimed.toString()) : 0n;
   const cancelledAtBigint = treeState?.cancelledAt
     ? BigInt(treeState.cancelledAt.toString())
     : null;
   const myClaimedAmount = claimRecordQuery.data
     ? BigInt(claimRecordQuery.data.claimedAmount.toString())
     : 0n;
+  const totalClaimed =
+    isSingleLeaf && myClaimedAmount > treeTotalClaimed
+      ? myClaimedAmount
+      : treeTotalClaimed;
 
   const cliffTsBigint = cliffTime ? BigInt(datetimeLocalToUnix(cliffTime)) : 0n;
   const endTsBigint = endTime ? BigInt(datetimeLocalToUnix(endTime)) : 0n;
@@ -704,6 +731,58 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const displayVested = isRecipientView ? recipientVested : vested;
   const displayClaimable = isRecipientView ? recipientClaimable : claimable;
   const displayProgress = progressPercent(displayVested, displaySupply);
+
+  const fundingStateQuery = useQuery({
+    queryKey: [
+      "campaignFundingState",
+      treeAddress,
+      treeState?.mint.toBase58(),
+      treeState?.vault.toBase58(),
+      totalSupply.toString(),
+      totalClaimed.toString(),
+    ],
+    queryFn: async () => {
+      if (!treeState) return null;
+      const native = isNativeSol(treeState.mint);
+      let funded = 0n;
+
+      if (native) {
+        const treePubkey = new PublicKey(treeAddress);
+        const accountInfo = await connection.getAccountInfo(treePubkey);
+        if (!accountInfo) return null;
+        const rent = await connection.getMinimumBalanceForRentExemption(accountInfo.data.length);
+        const lamports = BigInt(accountInfo.lamports);
+        funded = lamports > BigInt(rent) ? lamports - BigInt(rent) : 0n;
+      } else {
+        try {
+          const balance = await connection.getTokenAccountBalance(treeState.vault);
+          funded = BigInt(balance.value.amount);
+        } catch {
+          funded = 0n;
+        }
+      }
+
+      const requiredBalance = totalSupply > totalClaimed ? totalSupply - totalClaimed : 0n;
+
+      return {
+        funded,
+        remaining: requiredBalance > funded ? requiredBalance - funded : 0n,
+      };
+    },
+    enabled:
+      !!treeState &&
+      cancelledAtBigint === null &&
+      totalSupply > 0n,
+    staleTime: 10_000,
+  });
+  const fundingRemaining = fundingStateQuery.data?.remaining ?? 0n;
+  const isFundingIncomplete = fundingRemaining > 0n;
+  const canShowFundingRecovery =
+    !!treeState &&
+    !!publicKey &&
+    publicKey.equals(treeState.creator) &&
+    cancelledAtBigint === null &&
+    isFundingIncomplete;
 
   const canShowPauseToggle = canPauseCampaign({
     viewer: publicKey,
@@ -842,12 +921,19 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               ? "Wait for milestone release"
               : null
       : null;
+  const claimFundingDisabledReason = fundingStateQuery.isLoading
+    ? "Checking campaign funding..."
+    : isFundingIncomplete
+      ? "Campaign not funded yet"
+      : null;
   const claimActionLabel = beneficiaryMismatch && expectedBeneficiary
     ? `Only ${truncateAddress(expectedBeneficiary)} can claim`
     : txStatus.type === "loading"
       ? "Claiming..."
       : treeState?.paused
         ? "Campaign Paused"
+        : claimFundingDisabledReason
+          ? claimFundingDisabledReason
         : waitActionLabel
           ? waitActionLabel
           : withdrawDisabledReason ?? `Claim ${formatTokenAmount(displayClaimable)}`;
@@ -895,6 +981,27 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       : totalSupply > 0n && totalClaimed >= totalSupply
         ? "border-sky-500/20 bg-sky-500/10 text-sky-400"
         : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
+
+  async function handleFundExistingCampaign() {
+    if (!treeState || fundingRemaining <= 0n) return;
+    setFundingStatus({ type: "loading" });
+    try {
+      const funded = await fundCampaign({
+        mintAddress: treeState.mint.toBase58(),
+        treeAddress,
+        totalSupply: fundingRemaining.toString(),
+      });
+      removePendingCampaignFundingLocal(treeAddress);
+      setFundingStatus({ type: "idle" });
+      setTxStatus({ type: "success", sig: funded.sig });
+      toast("Campaign funded.", "success");
+      await fundingStateQuery.refetch();
+      fetchTree(true);
+      void campaignDetailQuery.refetch();
+    } catch (error) {
+      setFundingStatus({ type: "error", msg: formatVestingError(error) });
+    }
+  }
 
   /* ---- Cancel handler ---- */
 
@@ -969,16 +1076,29 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       };
 
       if (isNativeSol(treeState.mint)) {
-        await program.methods
-          .cancelStream(args)
-          .accounts({
-            creator: publicKey,
-            beneficiary,
-            vestingTree: treePubkey,
-            claimRecord,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
+        const cancelData = program.coder.instruction.encode("cancelStream", { args });
+        const placeholder = program.programId;
+        const cancelIx = new TransactionInstruction({
+          programId: program.programId,
+          keys: [
+            { pubkey: publicKey, isSigner: true, isWritable: true },
+            { pubkey: beneficiary, isSigner: false, isWritable: true },
+            { pubkey: treePubkey, isSigner: false, isWritable: true },
+            { pubkey: claimRecord, isSigner: false, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+          ],
+          data: cancelData,
+        });
+        const tx = new Transaction().add(cancelIx);
+        const provider = program.provider as {
+          sendAndConfirm: (tx: Transaction, signers?: unknown[]) => Promise<string>;
+        };
+        await provider.sendAndConfirm(tx, []);
       } else {
         const { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
         const beneficiaryAta = getAssociatedTokenAddressSync(treeState.mint, beneficiary);
@@ -1004,16 +1124,48 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       toast("Stream cancelled and settled.", "success");
       setCancelOpen(false);
       setTxStatus({ type: "success", sig: "" });
-      fetchTree(true);
-      void campaignDetailQuery.refetch();
 
       const cancelTs = Math.floor(Date.now() / 1000);
+      const claimedAtCancel = vestedAmount(
+        totalSupply,
+        releaseType,
+        cliffTsBigint,
+        endTsBigint,
+        BigInt(cancelTs),
+        BigInt(cancelTs),
+        singleMilestoneReleased,
+      );
+      const nextTotalClaimed = claimedAtCancel > totalClaimed ? claimedAtCancel : totalClaimed;
+      setTreeState((prev) =>
+        {
+          if (!prev) return prev;
+          const next = {
+            ...prev,
+            totalClaimed: new BN(nextTotalClaimed.toString()),
+            cancelledAt: new BN(cancelTs),
+            paused: false,
+          };
+          treeStateRef.current = next;
+          return next;
+        },
+      );
+      queryClient.setQueryData(["claimRecord", treeAddress, resolvedBeneficiary], (old: unknown) => {
+        const record = old as { claimedAmount?: { toString(): string }; lastClaimAt?: { toString(): string } } | null | undefined;
+        if (!record) return old;
+        const existingClaimed = record.claimedAmount ? BigInt(record.claimedAmount.toString()) : 0n;
+        const nextClaimed = claimedAtCancel > existingClaimed ? claimedAtCancel : existingClaimed;
+        return {
+          ...record,
+          claimedAmount: new BN(nextClaimed.toString()),
+          lastClaimAt: new BN(cancelTs),
+        };
+      });
       queryClient.setQueriesData(
         { queryKey: ["campaigns"] },
         (old: unknown) => {
-          const data = old as { campaigns?: { treeAddress: string; cancelledAt: number | null }[] } | undefined;
+          const data = old as { campaigns?: { treeAddress: string; cancelledAt: number | null; totalClaimed?: number | string }[] } | undefined;
           if (!data?.campaigns) return old;
-          return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, cancelledAt: cancelTs } : c) };
+          return { ...data, campaigns: data.campaigns.map((c) => c.treeAddress === treeAddress ? { ...c, cancelledAt: cancelTs, totalClaimed: nextTotalClaimed.toString() } : c) };
         },
       );
       void queryClient.invalidateQueries({ queryKey: ["beneficiaryCampaigns"] });
@@ -1021,8 +1173,10 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       fetch(`/api/campaigns/${treeAddress}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cancelledAt: cancelTs }),
+        body: JSON.stringify({ cancelledAt: cancelTs, totalClaimed: nextTotalClaimed.toString() }),
       }).catch(() => {});
+      fetchTree(true);
+      void campaignDetailQuery.refetch();
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -1384,6 +1538,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             />
           )}
 
+          <CampaignTimeline treeAddress={treeAddress} />
+
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
             <SectionHeader
               title="Details"
@@ -1583,7 +1739,33 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             )}
 
             <div className="mt-5 space-y-4">
-              {isMultiRecipient && program ? (
+              {isFundingIncomplete && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <p className="text-[13px] font-medium text-amber-300">Funding incomplete</p>
+                  <p className="mt-2 text-[12px] leading-6 text-amber-100/80">
+                    This campaign needs {formatFundingAmount(fundingRemaining)} before claims can run.
+                  </p>
+                  {canShowFundingRecovery ? (
+                    <button
+                      type="button"
+                      onClick={handleFundExistingCampaign}
+                      disabled={fundingStatus.type === "loading"}
+                      className="mt-3 w-full rounded-xl bg-amber-400 px-4 py-3 text-[13px] font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {fundingStatus.type === "loading" ? "Funding..." : "Resume Funding"}
+                    </button>
+                  ) : (
+                    <p className="mt-3 text-[12px] leading-5 text-amber-100/70">
+                      Creator must fund this campaign first.
+                    </p>
+                  )}
+                  {fundingStatus.type === "error" && (
+                    <p className="mt-3 text-[12px] leading-5 text-red-300">{fundingStatus.msg}</p>
+                  )}
+                </div>
+              )}
+
+              {isMultiRecipient && program && !claimFundingDisabledReason ? (
                 <ClaimWithProofButton
                   program={program}
                   publicKey={publicKey}
@@ -1599,10 +1781,18 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   onSuccess={fetchTree}
                   toast={toast}
                 />
+              ) : isMultiRecipient && program ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full cursor-not-allowed rounded-xl bg-white px-4 py-3 text-[14px] font-semibold text-[#0d1117] opacity-50"
+                >
+                  {claimFundingDisabledReason}
+                </button>
               ) : (
                 <button
                   onClick={handleWithdraw}
-                  disabled={!!withdrawDisabledReason}
+                  disabled={!!withdrawDisabledReason || !!claimFundingDisabledReason}
                   className="w-full rounded-xl bg-white px-4 py-3 text-[14px] font-semibold text-[#0d1117] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {txStatus.type === "loading" ? "Claiming..." : claimActionLabel}

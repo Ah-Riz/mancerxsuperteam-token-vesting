@@ -134,6 +134,12 @@ function parseReleaseType(value: string): 0 | 1 | 2 | null {
   return null;
 }
 
+function releaseTypeLabel(releaseType: 0 | 1 | 2): string {
+  if (releaseType === 0) return "Cliff";
+  if (releaseType === 1) return "Linear";
+  return "Milestone";
+}
+
 function parseTimestamp(value: string): number {
   const trimmed = value.trim();
   if (!trimmed) return Number.NaN;
@@ -206,6 +212,7 @@ function humanizeScheduleError(message: string): string {
 export function parseBulkCsv(
   text: string,
   mintDecimals: number | null,
+  expectedReleaseType?: 0 | 1 | 2,
 ): BulkCsvParseResult {
   const rows = parseCsvText(text);
   if (rows.length === 0) {
@@ -267,6 +274,10 @@ export function parseBulkCsv(
     const releaseType = parseReleaseType(releaseTypeValue);
     if (releaseType === null) {
       rowIssues.push("Unknown vesting type. Use Cliff, Linear, Milestone, or 0, 1, 2.");
+    } else if (expectedReleaseType !== undefined && releaseType !== expectedReleaseType) {
+      rowIssues.push(
+        `This page only accepts ${releaseTypeLabel(expectedReleaseType)} rows. Change releaseType to ${releaseTypeLabel(expectedReleaseType)} or use the ${releaseTypeLabel(releaseType)} create page.`,
+      );
     }
 
     const startTime = parseTimestamp(startTimeRaw);

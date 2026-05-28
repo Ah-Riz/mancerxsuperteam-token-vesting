@@ -39,6 +39,9 @@ export const VESTING_ERROR_CODES = {
   StreamExpired: 6032,
   MilestoneNotReleased: 6033,
   MilestoneAlreadyReleased: 6034,
+  NativeSolVaultNotEmpty: 6035,
+  NativeSolRentViolation: 6036,
+  UnsupportedMint: 6037,
 } as const;
 
 type ErrorKey = keyof typeof VESTING_ERROR_CODES;
@@ -82,6 +85,12 @@ const USER_MESSAGES: Record<ErrorKey, string> = {
     "This milestone has not been released yet. The creator must release it before you can claim.",
   MilestoneAlreadyReleased:
     "This milestone has already been released by the creator.",
+  NativeSolVaultNotEmpty:
+    "Native SOL vault still holds lamports. Contact support.",
+  NativeSolRentViolation:
+    "Transfer would drop the vault below rent-exempt minimum.",
+  UnsupportedMint:
+    "This token uses Token-2022 which is not supported. Please use a standard SPL token.",
 };
 
 function codeToHex(code: number): string {

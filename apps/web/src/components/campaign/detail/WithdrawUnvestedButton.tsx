@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { type Program } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { getGracePeriodState } from "@/lib/vesting/display";
+import { isNativeSol } from "@/lib/sol/auto-wrap";
 
 type Props = {
   program: Program;
@@ -43,19 +44,42 @@ export function WithdrawUnvestedButton({
   async function handleWithdraw() {
     setLoading(true);
     try {
-      const creatorAta = getAssociatedTokenAddressSync(mint, publicKey);
+      if (isNativeSol(mint)) {
+        const data = program.coder.instruction.encode("withdrawUnvested", {});
+        const placeholder = program.programId;
+        const ix = new TransactionInstruction({
+          programId: program.programId,
+          keys: [
+            { pubkey: publicKey, isSigner: true, isWritable: true },
+            { pubkey: treePubkey, isSigner: false, isWritable: true },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: placeholder, isSigner: false, isWritable: false },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          ],
+          data,
+        });
+        const tx = new Transaction().add(ix);
+        const provider = program.provider as {
+          sendAndConfirm: (tx: Transaction, signers?: unknown[]) => Promise<string>;
+        };
+        await provider.sendAndConfirm(tx, []);
+      } else {
+        const creatorAta = getAssociatedTokenAddressSync(mint, publicKey);
 
-      await program.methods
-        .withdrawUnvested()
-        .accounts({
-          creator: publicKey,
-          vestingTree: treePubkey,
-          vaultAuthority,
-          vault,
-          creatorAta,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+        await program.methods
+          .withdrawUnvested()
+          .accounts({
+            creator: publicKey,
+            vestingTree: treePubkey,
+            vaultAuthority,
+            vault,
+            creatorAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+      }
 
       toast("Unvested tokens withdrawn.", "success");
       setConfirmOpen(false);

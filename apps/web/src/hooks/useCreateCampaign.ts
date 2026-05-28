@@ -15,7 +15,12 @@ import {
 } from "@/lib/campaign/bulk";
 import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
-import { indexCampaign, saveStreamScheduleLocal } from "@/lib/stream/persist";
+import {
+  indexCampaign,
+  removePendingCampaignFundingLocal,
+  savePendingCampaignFundingLocal,
+  saveStreamScheduleLocal,
+} from "@/lib/stream/persist";
 import { useVestingProgram } from "./useVestingProgram";
 import { buildWrapSolInstructions, isNativeSol } from "@/lib/sol/auto-wrap";
 
@@ -125,6 +130,15 @@ export function useCreateCampaign() {
         });
       }
 
+      savePendingCampaignFundingLocal({
+        treeAddress,
+        creator: publicKey.toBase58(),
+        mint: mintKey.toBase58(),
+        totalSupply: params.prepared.totalSupply,
+        createdAt: Math.floor(Date.now() / 1000),
+        createSig: sig,
+      });
+
       try {
         await indexCampaign(
           buildCreateCampaignIndexPayload({
@@ -213,6 +227,8 @@ export function useCreateCampaign() {
           })
           .rpc();
       }
+
+      removePendingCampaignFundingLocal(params.treeAddress);
 
       return {
         sig,

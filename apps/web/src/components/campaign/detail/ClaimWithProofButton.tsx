@@ -534,7 +534,22 @@ export function ClaimWithProofButton({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ signature: sig }),
             });
-            if (res.ok) return;
+            if (res.ok) {
+              const data = (await res.json()) as { processed?: number };
+              if ((data.processed ?? 0) === 0) {
+                console.warn("[ClaimWithProofButton] claim sync returned no events", {
+                  signature: sig,
+                  result: data,
+                });
+              }
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["campaign", treeAddress] }),
+                queryClient.invalidateQueries({ queryKey: ["campaigns"] }),
+                queryClient.invalidateQueries({ queryKey: ["beneficiaryCampaigns"] }),
+                queryClient.invalidateQueries({ queryKey: ["claimHistory", treeAddress] }),
+              ]);
+              return;
+            }
           } catch { /* retry */ }
           if (i < retries - 1) await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
         }

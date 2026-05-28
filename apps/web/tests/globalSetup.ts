@@ -32,12 +32,14 @@ export default function globalSetup() {
   // Warn if pointing at Supabase (tests will truncate tables!)
   const dbUrl = process.env.DATABASE_URL;
   if (dbUrl.includes("supabase.co") || dbUrl.includes("supabase.in") || dbUrl.includes("pooler") || dbUrl.includes("neon")) {
-    console.warn(
-      "\n⚠️  WARNING: DATABASE_URL points to Supabase. API tests that require DB " +
-      "will skip destructive operations to protect your data.\n" +
-      "   For full test coverage, use a local Postgres:\n" +
-      "   DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci pnpm test\n",
-    );
+    if (process.env.ALLOW_REMOTE_DB_TEST_WRITES !== "true") {
+      throw new Error(
+        "DATABASE_URL points to a remote database. Refusing to run tests because API tests write rows. " +
+        "Use local Postgres (DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci) or set ALLOW_REMOTE_DB_TEST_WRITES=true.",
+      );
+    }
+
+    console.warn("\n⚠️  Running tests against a remote database because ALLOW_REMOTE_DB_TEST_WRITES=true.\n");
   }
 
   if (process.env.CI || !process.env.DRIZZLE_PUSH) {
