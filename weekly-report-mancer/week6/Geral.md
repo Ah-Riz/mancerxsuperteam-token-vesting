@@ -162,7 +162,136 @@
 
 ---
 
-### 7. End-user documentation
+### 7. Funding recovery system (create/fund split)
+
+**Problem:** If `createCampaign` succeeded on-chain but `fundCampaign` failed (wallet rejection, insufficient balance, network timeout), the user was stuck — the campaign existed but had no tokens, and there was no way to resume.
+
+**Solution:** I built a localStorage-based pending funding recovery system.
+
+#### Main changes
+
+| Area | What changed |
+|---|---|
+| `persist.ts` | New module to store/retrieve pending unfunded campaigns in localStorage |
+| `PendingFundingsPanel.tsx` | New component showing unfunded campaigns with "Resume Funding" button |
+| Create pages (cliff/linear/milestone) | All 3 pages now show pending fundings panel at the top |
+| Campaign detail | Claim buttons disabled while campaign is underfunded |
+| Display | Shows human-readable token amounts (`0.003 SOL`) instead of raw lamports |
+
+#### Relevant commit
+
+- `7d7ffe5 Add campaign recovery and E2E coverage`
+
+---
+
+### 8. Campaign event timeline
+
+**Problem:** Users had no visibility into what happened to a campaign over time — cancels, pauses, withdrawals, milestone releases were invisible.
+
+**Solution:** I built a timeline component that shows all campaign lifecycle events.
+
+#### Main changes
+
+| Area | What changed |
+|---|---|
+| `CampaignTimeline.tsx` | 186-line component rendering event cards with timestamps and details |
+| `useCampaignTimeline.ts` | Hook fetching timeline events from the API |
+| Campaign detail page | Timeline integrated into the campaign view |
+
+---
+
+### 9. Playwright E2E test infrastructure
+
+**Problem:** There were no automated browser tests. Manual testing was the only way to verify UI flows worked end-to-end.
+
+**Solution:** I set up Playwright from scratch with a mock wallet system and wrote 13 E2E tests covering critical user flows.
+
+#### What was built
+
+| Area | What changed |
+|---|---|
+| `playwright.config.ts` | Full config with webServer auto-start, timeouts, chromium project |
+| Mock wallet (`WalletProvider`) | localStorage-based E2E mock that injects a fake connected wallet |
+| `helpers.ts` | Shared utilities: `enableE2eWallet`, `gotoWithRetry`, `selectSolToken`, `openCsvMode`, `parseCsv` |
+| `pageErrors.ts` | Utility to collect and filter known noisy page errors (hydration) |
+| `landing.spec.ts` | Landing page smoke test |
+| `create-pages.spec.ts` | 3 tests: cliff/linear/milestone disconnected state rendering |
+| `csv-validation.spec.ts` | 6 tests: type enforcement, duplicate detection, milestone index rules |
+| `funding-recovery.spec.ts` | 3 tests: pending funding panel visibility and resume button |
+
+#### Test results
+
+- **13/13 passing** on both `test:e2e` (Playwright-managed server) and `test:e2e:local` (pre-started dev server)
+
+#### Relevant commit
+
+- `7d7ffe5 Add campaign recovery and E2E coverage`
+
+---
+
+### 10. Test infrastructure improvements
+
+**Problem:** Running `pnpm test` required a Postgres database, making it impossible for quick local validation. CI was also failing intermittently.
+
+**Solution:** I split the test configs and fixed CI pipeline issues.
+
+#### Main changes
+
+| Area | What changed |
+|---|---|
+| `vitest.unit.config.ts` | New config that excludes DB-dependent tests (231 tests pass without Postgres) |
+| `test:unit` script | Runs unit tests only — no DB required |
+| `test:db` script | Explicit alias for DB-dependent test suite |
+| `test:e2e:deps` script | Documents Playwright OS dependency installation |
+| CI fixes | 3 commits (`bec33d6`, `ca3cc69`, `bc72cb9`) fixing lint, test, and workflow issues |
+
+---
+
+### 11. Landing page polish
+
+**Problem:** Landing page messaging was generic and navigation didn't guide users toward the product.
+
+**Solution:** I polished the hero section, FAQ, waitlist copy, and navigation flow.
+
+#### Relevant commit
+
+- `54a762c refactor: polish landing page messaging and nav`
+
+---
+
+### 12. WalletTokensProvider (real-time balance context)
+
+**Problem:** Multiple components needed wallet token balances but were fetching independently, causing redundant RPC calls and inconsistent state.
+
+**Solution:** I created a shared context provider that fetches and normalizes wallet token balances once, exposing them to all consumers.
+
+#### Main changes
+
+| Area | What changed |
+|---|---|
+| `WalletTokensProvider.tsx` | New context provider with auto-refetch, loading/error states |
+| Token normalization | Native SOL surfaced separately from SPL tokens |
+| Create flows | Token picker now reads from shared context instead of fetching independently |
+
+---
+
+### 13. IDL sync and auth gate fixes
+
+**Problem:** Frontend was intermittently failing because the committed IDL didn't match the deployed program, and campaign indexing was blocked by an unnecessary auth gate.
+
+**Solution:** Two IDL sync commits and one auth gate removal.
+
+#### Main changes
+
+| Area | What changed |
+|---|---|
+| IDL sync | Restored canonical IDL matching devnet deploy (`412d384`, `43c3feb`) |
+| Auth gate | Removed admin auth requirement from `POST /api/campaigns` to unblock indexing (`2057038`) |
+| Security test | Updated test expectations after auth gate removal (`1291a1d`) |
+
+---
+
+### 14. End-user documentation
 
 **Problem:** BD needed a clearer user-facing guide for testing and later product onboarding, especially on Devnet.
 
@@ -200,6 +329,12 @@
 | Recipient recipient-list modal | Working |
 | Allocation editor page | Working |
 | Vesting chart range controls + completed flat line | Working |
+| Funding recovery (create/fund split) | Working — pending campaigns persist and can resume |
+| Campaign event timeline | Working |
+| Playwright E2E tests | 13/13 passing |
+| Unit tests without DB | 231 passing via `test:unit` |
+| Landing page polish | Working |
+| WalletTokensProvider (shared balance context) | Working |
 | End-user Devnet guide | Draft complete |
 
 ### Not yet final
@@ -313,12 +448,18 @@ These need:
 
 | Metric | Value |
 |---|---|
-| Geral commits this window | **3 meaningful product commits** (`9bba48e`, `cb08b83`, `ceff96f`) |
-| Main frontend files changed across those commits | 40+ |
+| Geral commits this week (since May 25) | **16 commits** |
+| Key feature commits | `9bba48e`, `cb08b83`, `ceff96f`, `7d7ffe5`, `54a762c` |
+| Main frontend files changed | 48+ files in largest commit alone |
+| New components built | `PendingFundingsPanel`, `CampaignTimeline`, `WalletTokensProvider`, E2E test infra |
+| E2E tests written | 13 Playwright tests (all passing) |
+| Unit test config | `vitest.unit.config.ts` — 231 tests pass without DB |
 | User guide docs added | 1 end-user guide |
-| Week 6 planning docs added | 1 execution plan |
+| Week 6 planning docs added | 1 execution plan, 1 gap analysis (EN + ID) |
 | CSV validation tests added/updated | 8 passing cases in `bulk-campaign.test.ts` |
-| Major UX areas touched | create flow, claim flow, dashboard, campaigns list, campaign detail, chart, docs |
+| CI fixes | 3 commits unblocking pipeline |
+| Major UX areas touched | create flow, claim flow, dashboard, campaigns list, campaign detail, chart, funding recovery, landing page, E2E testing, docs |
+| Lines changed (week 6 window) | ~2,800+ insertions |
 
 ---
 

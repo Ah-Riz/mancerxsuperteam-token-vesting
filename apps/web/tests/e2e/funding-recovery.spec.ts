@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { collectRelevantPageErrors } from "./pageErrors";
-import { creatorWallet, enableE2eWallet, nativeSolMint } from "./helpers";
+import { creatorWallet, enableE2eWallet, gotoWithRetry, nativeSolMint } from "./helpers";
 
 const pendingTree = "8wu9j14MDXtkUPHC6EeG4AvfBSDZwVqqSqfNK1LLt1UY";
 
@@ -33,7 +33,7 @@ for (const createPage of [
     const pageErrors = collectRelevantPageErrors(page);
     await seedPendingFunding(page);
 
-    const response = await page.goto(createPage.path);
+    const response = await gotoWithRetry(page, createPage.path);
 
     expect(response?.ok()).toBe(true);
     await expect(page.getByRole("heading", { name: createPage.title })).toBeVisible();

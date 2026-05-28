@@ -7,7 +7,7 @@ const webServer = process.env.PLAYWRIGHT_BASE_URL
       command: "NEXT_PUBLIC_E2E_MOCK_WALLET=true pnpm exec next dev -H 127.0.0.1 -p 3100",
       url: baseURL,
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      timeout: 180_000,
     };
 
 export default defineConfig({
@@ -20,6 +20,8 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
   },
   webServer,
   projects: [

@@ -37,9 +37,10 @@ function NetworkBadge() {
 
 export function AppHeader() {
   const { connected, publicKey } = useWallet();
-  const showE2eWallet =
-    connected &&
-    !!publicKey;
+  const isE2e =
+    typeof window !== "undefined" &&
+    window.localStorage.getItem("velthoryn:e2e-wallet") === "1";
+  const showE2eWallet = isE2e && connected && !!publicKey;
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#0b0d12]/80 px-6 backdrop-blur-xl">

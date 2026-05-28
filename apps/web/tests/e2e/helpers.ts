@@ -11,8 +11,26 @@ export async function enableE2eWallet(page: Page) {
   });
 }
 
+export async function gotoWithRetry(page: Page, path: string, maxRetries = 3) {
+  let lastError: Error | undefined;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await page.goto(path, { timeout: 30_000, waitUntil: "load" });
+      if (response?.ok()) return response;
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (i < maxRetries - 1) {
+        await page.waitForTimeout(1000 * (i + 1));
+      }
+    }
+  }
+  throw lastError ?? new Error(`Failed to navigate to ${path}`);
+}
+
 export async function selectSolToken(page: Page) {
-  await page.getByRole("button", { name: /select token/i }).click();
+  const btn = page.getByRole("button", { name: /select token/i });
+  await btn.waitFor({ state: "visible", timeout: 15_000 });
+  await btn.click();
   await page.getByRole("button", { name: /SOL.*Native/i }).first().click();
   await expect(page.getByRole("button", { name: /SOL.*Native/i })).toBeVisible();
 }

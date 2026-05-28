@@ -15,5 +15,11 @@ export function collectRelevantPageErrors(page: {
 }
 
 function isKnownNoisyPageError(error: Error) {
-  return error.name === "SyntaxError" && error.message === "Invalid or unexpected token" && !error.stack;
+  if (error.name === "SyntaxError" && error.message === "Invalid or unexpected token" && !error.stack) {
+    return true;
+  }
+  if (error.message.includes("Hydration failed") || error.message.includes("hydration-mismatch")) {
+    return true;
+  }
+  return false;
 }

@@ -3,6 +3,7 @@ import { collectRelevantPageErrors } from "./pageErrors";
 import {
   csv,
   enableE2eWallet,
+  gotoWithRetry,
   openCsvMode,
   parseCsv,
   recipientWallet,
@@ -19,7 +20,7 @@ const schedules = {
 async function openCsvCreatePage(page: Page, path: string, csvButton?: RegExp) {
   const pageErrors = collectRelevantPageErrors(page);
   await enableE2eWallet(page);
-  const response = await page.goto(path);
+  const response = await gotoWithRetry(page, path);
   expect(response?.ok()).toBe(true);
   await selectSolToken(page);
   await openCsvMode(page, csvButton);
@@ -112,7 +113,7 @@ test("milestone CSV allows same wallet with different milestone indexes", async 
   );
 
   await expect(page.getByText(/this page only accepts/i)).toHaveCount(0);
-  await expect(page.getByText(/recipients/i)).toBeVisible();
+  await expect(page.getByText("Recipients", { exact: true })).toBeVisible();
   await expect(page.getByText(/milestone leaves/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /create & fund campaign/i })).toBeEnabled();
   expect(pageErrors).toEqual([]);

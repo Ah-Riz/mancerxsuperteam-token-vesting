@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { collectRelevantPageErrors } from "./pageErrors";
+import { gotoWithRetry } from "./helpers";
 
 test("landing page renders", async ({ page }) => {
   const pageErrors = collectRelevantPageErrors(page);
 
-  const response = await page.goto("/");
+  const response = await gotoWithRetry(page, "/");
 
   expect(response?.ok()).toBe(true);
   await expect(page.getByText("Velthoryn").first()).toBeVisible();

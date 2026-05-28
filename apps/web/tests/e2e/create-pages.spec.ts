@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { collectRelevantPageErrors } from "./pageErrors";
+import { gotoWithRetry } from "./helpers";
 
 const createPages = [
   {
@@ -23,7 +24,7 @@ for (const createPage of createPages) {
   test(`${createPage.title} page renders disconnected state`, async ({ page }) => {
     const pageErrors = collectRelevantPageErrors(page);
 
-    const response = await page.goto(createPage.path);
+    const response = await gotoWithRetry(page, createPage.path);
 
     expect(response?.ok()).toBe(true);
     await expect(page.getByRole("heading", { name: createPage.title })).toBeVisible();
