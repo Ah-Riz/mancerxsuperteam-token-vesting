@@ -34,20 +34,20 @@ describe("MilestoneReleasePanel", () => {
 
   it("shows milestone list for multi-leaf campaigns", () => {
     renderPanel({ leafCount: 3 });
-    expect(screen.getByText("Milestone #0")).toBeTruthy();
-    expect(screen.getByText("Milestone #1")).toBeTruthy();
-    expect(screen.getByText("Milestone #2")).toBeTruthy();
+    expect(screen.getByText("#0")).toBeTruthy();
+    expect(screen.getByText("#1")).toBeTruthy();
+    expect(screen.getByText("#2")).toBeTruthy();
   });
 
-  it("shows Released badge for released milestones", () => {
+  it("shows done badge for released milestones", () => {
     const flags = new Uint8Array(32);
     flags[0] = 0b00000001; // milestone 0 released
     renderPanel({ milestoneReleasedFlags: flags });
-    expect(screen.getByText("Released ✓")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
   });
 
   it("shows Release button for unreleased milestones", () => {
     renderPanel({ leafCount: 2 });
-    expect(screen.getAllByText("Release").length).toBe(2);
+    expect(screen.getByText("Release #0")).toBeTruthy();
   });
 });

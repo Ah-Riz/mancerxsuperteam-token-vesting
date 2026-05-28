@@ -7,8 +7,8 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram, Transaction } from "@solana/web3.js";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import {
   buildCreateCampaignIndexPayload,
   type PreparedBulkCampaign,
@@ -17,6 +17,7 @@ import { derivePda } from "@/lib/anchor/client";
 import { formatVestingError } from "@/lib/anchor/errors";
 import { indexCampaign, saveStreamScheduleLocal } from "@/lib/stream/persist";
 import { useVestingProgram } from "./useVestingProgram";
+import { buildWrapSolInstructions, isNativeSol } from "@/lib/sol/auto-wrap";
 
 export interface CreateCampaignParams {
   mintAddress: string;
@@ -36,6 +37,7 @@ export interface FundCampaignParams {
   mintAddress: string;
   treeAddress: string;
   totalSupply: string;
+  autoWrap?: boolean;
 }
 
 export interface FundCampaignResult {
@@ -43,15 +45,25 @@ export interface FundCampaignResult {
   treeAddress: string;
 }
 
+export interface CreateAndFundCampaignResult {
+  createSig: string;
+  fundSig: string;
+  treeAddress: string;
+  totalSupply: string;
+  indexWarning: string | null;
+}
+
 export function useCreateCampaign() {
   const program = useVestingProgram();
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
 
   const createCampaign = useCallback(
     async (params: CreateCampaignParams): Promise<CreateCampaignResult> => {
       if (!program || !publicKey) throw new Error("Wallet not connected");
 
       const mintKey = new PublicKey(params.mintAddress);
+      const nativeSol = isNativeSol(mintKey);
       const campaignIdBN = new BN(params.campaignId);
       const [vestingTree] = derivePda([
         "tree",
@@ -61,29 +73,40 @@ export function useCreateCampaign() {
       ]);
       const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
       const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
+      const args = {
+        campaignId: campaignIdBN,
+        merkleRoot: Array.from(Buffer.from(params.prepared.merkleRoot, "hex")),
+        totalSupply: new BN(params.prepared.totalSupply),
+        leafCount: new BN(params.prepared.leafCount),
+        cancellable: params.cancellable,
+        cancelAuthority: params.cancellable ? publicKey : null,
+        pauseAuthority: publicKey,
+      };
 
-      const sig = await program.methods
-        .createCampaign({
-          campaignId: campaignIdBN,
-          merkleRoot: Array.from(Buffer.from(params.prepared.merkleRoot, "hex")),
-          totalSupply: new BN(params.prepared.totalSupply),
-          leafCount: new BN(params.prepared.leafCount),
-          cancellable: params.cancellable,
-          cancelAuthority: params.cancellable ? publicKey : null,
-          pauseAuthority: publicKey,
-        })
-        .accounts({
-          creator: publicKey,
-          vestingTree,
-          vaultAuthority,
-          vault,
-          mint: mintKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .rpc();
+      const sig = nativeSol
+        ? await program.methods
+            .createCampaignNative(args)
+            .accounts({
+              creator: publicKey,
+              vestingTree,
+              systemProgram: SystemProgram.programId,
+              rent: SYSVAR_RENT_PUBKEY,
+            })
+            .rpc()
+        : await program.methods
+            .createCampaign(args)
+            .accounts({
+              creator: publicKey,
+              vestingTree,
+              vaultAuthority,
+              vault,
+              mint: mintKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+              systemProgram: SystemProgram.programId,
+              rent: SYSVAR_RENT_PUBKEY,
+            })
+            .rpc();
 
       let indexWarning: string | null = null;
       const treeAddress = vestingTree.toBase58();
@@ -137,29 +160,91 @@ export function useCreateCampaign() {
       if (!program || !publicKey) throw new Error("Wallet not connected");
 
       const mintKey = new PublicKey(params.mintAddress);
+      const nativeSol = isNativeSol(mintKey);
       const vestingTree = new PublicKey(params.treeAddress);
-      const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
-      const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
-      const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
 
-      const sig = await program.methods
-        .fundCampaign(new BN(params.totalSupply))
-        .accounts({
-          creator: publicKey,
-          vestingTree,
-          vault,
-          sourceAta,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+      let sig: string;
+
+      if (nativeSol) {
+        sig = await program.methods
+          .fundCampaignNative(new BN(params.totalSupply))
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      } else if (params.autoWrap === true) {
+        const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
+        const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
+        const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
+        const lamports = Number(params.totalSupply);
+        const wrapIxs = await buildWrapSolInstructions(connection, publicKey, lamports);
+
+        const fundIx = await program.methods
+          .fundCampaign(new BN(params.totalSupply))
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vault,
+            sourceAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .instruction();
+
+        const tx = new Transaction();
+        for (const ix of wrapIxs) tx.add(ix);
+        tx.add(fundIx);
+
+        sig = await sendTransaction(tx, connection);
+        await connection.confirmTransaction(sig, "confirmed");
+      } else {
+        const sourceAta = getAssociatedTokenAddressSync(mintKey, publicKey);
+        const [vaultAuthority] = derivePda(["vault_authority", vestingTree.toBuffer()]);
+        const vault = getAssociatedTokenAddressSync(mintKey, vaultAuthority, true);
+        sig = await program.methods
+          .fundCampaign(new BN(params.totalSupply))
+          .accounts({
+            creator: publicKey,
+            vestingTree,
+            vault,
+            sourceAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+      }
 
       return {
         sig,
         treeAddress: params.treeAddress,
       };
     },
-    [program, publicKey],
+    [program, publicKey, connection, sendTransaction],
   );
 
-  return { createCampaign, fundCampaign, formatVestingError };
+  const createAndFundCampaign = useCallback(
+    async (
+      createParams: CreateCampaignParams,
+      options?: { autoWrap?: boolean },
+    ): Promise<CreateAndFundCampaignResult> => {
+      const created = await createCampaign(createParams);
+      const funded = await fundCampaign({
+        mintAddress: createParams.mintAddress,
+        treeAddress: created.treeAddress,
+        totalSupply: created.totalSupply,
+        autoWrap: options?.autoWrap,
+      });
+
+      return {
+        createSig: created.sig,
+        fundSig: funded.sig,
+        treeAddress: created.treeAddress,
+        totalSupply: created.totalSupply,
+        indexWarning: created.indexWarning,
+      };
+    },
+    [createCampaign, fundCampaign],
+  );
+
+  return { createCampaign, fundCampaign, createAndFundCampaign, formatVestingError };
 }

@@ -37,15 +37,15 @@ apps/web/.pgsock/
 
 # Claude Code
 .claude/
-# CLAUDE.md
-# **/CLAUDE.md
+CLAUDE.md
+**/CLAUDE.md
 # design.md
 
 # codex
 .codex
 
 # Research docs (private, not for GitHub)
-# research-docs/
+research-docs/
 
 # IDE / OS
 .idea/

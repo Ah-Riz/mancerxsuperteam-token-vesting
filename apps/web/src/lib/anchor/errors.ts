@@ -126,8 +126,21 @@ function matchVestingCode(raw: string): ErrorKey | null {
 
 /** Map Anchor / RPC errors to short user-facing strings. */
 export function formatVestingError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error
+    ? err.message
+    : typeof err === "object" &&
+        err !== null &&
+        "message" in err &&
+        typeof (err as { message?: unknown }).message === "string"
+      ? (err as { message: string }).message
+      : String(err);
 
+  if (raw.includes("Account does not exist or has no data")) {
+    return "Some optional account data is not available yet. If the transaction already succeeded, your claim is safe. Refresh the page and try again.";
+  }
+  if (raw.includes("Transfer: insufficient lamports")) {
+    return "Insufficient SOL to create the recipient token account. Fund the recipient wallet with more SOL, then try claim again.";
+  }
   if (raw.includes("AccountNotInitialized") && raw.includes("source_ata")) {
     return "Your wallet does not have a token account for this mint. Create one with: spl-token create-account <MINT> --url devnet";
   }
@@ -143,8 +156,13 @@ export function formatVestingError(err: unknown): string {
   if (/\b0x1\b/.test(raw) && !raw.includes("custom program error")) {
     return "Insufficient SOL for transaction fees. Try: solana airdrop 2 --url devnet";
   }
-  if (raw.includes("User rejected")) {
-    return "Transaction cancelled in wallet.";
+  if (
+    raw.includes("User rejected") ||
+    raw.includes("Transaction cancelled") ||
+    raw.includes("rejected by user") ||
+    raw.includes("Connection rejected")
+  ) {
+    return "Wallet approval did not complete.";
   }
 
   const vestingKey = matchVestingCode(raw);

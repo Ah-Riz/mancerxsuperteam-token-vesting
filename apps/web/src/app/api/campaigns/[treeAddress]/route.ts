@@ -2,7 +2,13 @@ import { NextRequest } from "next/server";
 import { jsonResponse } from "@/lib/api/json-response";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { campaigns, rootVersions, claimEvents, milestoneEvents } from "@/lib/db/schema";
+import {
+  campaigns,
+  rootVersions,
+  claimEvents,
+  leaves,
+  milestoneEvents,
+} from "@/lib/db/schema";
 import { NotFoundError } from "@/lib/api/errors";
 import { withRoute } from "@/lib/api/route-wrapper";
 import { GRACE_PERIOD_SECS } from "@/lib/api/tx-builder";
@@ -24,34 +30,78 @@ async function getCampaignByAddressHandler(
     throw new NotFoundError("Campaign");
   }
 
-    // Fetch root versions for this campaign
-    const rootVersionList = await db
-      .select({
-        version: rootVersions.version,
-        merkleRoot: rootVersions.merkleRoot,
-        leafCount: rootVersions.leafCount,
-        createdAt: rootVersions.createdAt,
-        ipfsCid: rootVersions.ipfsCid,
-      })
-      .from(rootVersions)
-      .where(eq(rootVersions.campaignId, campaign.id))
-      .orderBy(sql`${rootVersions.version} DESC`);
+  // Fetch root versions for this campaign
+  const rootVersionList = await db
+    .select({
+      id: rootVersions.id,
+      version: rootVersions.version,
+      merkleRoot: rootVersions.merkleRoot,
+      leafCount: rootVersions.leafCount,
+      createdAt: rootVersions.createdAt,
+      ipfsCid: rootVersions.ipfsCid,
+    })
+    .from(rootVersions)
+    .where(eq(rootVersions.campaignId, campaign.id))
+    .orderBy(sql`${rootVersions.version} DESC`);
 
-    // Compute analytics from claim_events
-    const [analytics] = await db
-      .select({
-        uniqueClaimers: sql<number>`count(distinct ${claimEvents.beneficiary})::int`,
-        claimCount: sql<number>`count(*)::int`,
-      })
-      .from(claimEvents)
-      .where(eq(claimEvents.campaignId, campaign.id));
+  const latestRootVersion = rootVersionList[0];
+  const latestLeaves = latestRootVersion
+    ? await db
+        .select({
+          beneficiary: leaves.beneficiary,
+          amount: leaves.amount,
+          releaseType: leaves.releaseType,
+        })
+        .from(leaves)
+        .where(eq(leaves.rootVersionId, latestRootVersion.id))
+    : [];
 
-    const totalSupply = BigInt(campaign.totalSupply);
-    const totalClaimed = BigInt(campaign.totalClaimed);
-    const percentClaimed =
-      totalSupply > 0n
-        ? Number((totalClaimed * 10000n) / totalSupply) / 100
-        : 0;
+  const claimTotals = await db
+    .select({
+      beneficiary: claimEvents.beneficiary,
+      claimedAmount: sql<string>`max(${claimEvents.totalClaimedByUser})::text`,
+    })
+    .from(claimEvents)
+    .where(eq(claimEvents.campaignId, campaign.id))
+    .groupBy(claimEvents.beneficiary);
+
+  const claimedByBeneficiary = new Map(
+    claimTotals.map((row) => [row.beneficiary, BigInt(row.claimedAmount)]),
+  );
+  const recipientAgg = new Map<string, { allocation: bigint; leafCount: number }>();
+  for (const leaf of latestLeaves) {
+    const current = recipientAgg.get(leaf.beneficiary) ?? { allocation: 0n, leafCount: 0 };
+    recipientAgg.set(leaf.beneficiary, {
+      allocation: current.allocation + BigInt(leaf.amount),
+      leafCount: current.leafCount + 1,
+    });
+  }
+  const recipientList = [...recipientAgg.entries()]
+    .map(([beneficiary, summary]) => ({
+      beneficiary,
+      allocation: summary.allocation.toString(),
+      leafCount: summary.leafCount,
+      claimedAmount: (claimedByBeneficiary.get(beneficiary) ?? 0n).toString(),
+    }))
+    .sort((a, b) => b.leafCount - a.leafCount || a.beneficiary.localeCompare(b.beneficiary));
+
+  // Compute analytics from claim_events
+  const [analytics] = await db
+    .select({
+      uniqueClaimers: sql<number>`count(distinct ${claimEvents.beneficiary})::int`,
+      claimCount: sql<number>`count(*)::int`,
+    })
+    .from(claimEvents)
+    .where(eq(claimEvents.campaignId, campaign.id));
+
+  const totalSupply = BigInt(campaign.totalSupply);
+  const totalClaimed = BigInt(campaign.totalClaimed);
+  const percentClaimed =
+    totalSupply > 0n
+      ? Number((totalClaimed * 10000n) / totalSupply) / 100
+      : 0;
+
+  const hasMilestoneLeaves = latestLeaves.some((l) => l.releaseType === 2);
 
   let gracePeriod: {
     end: string;
@@ -107,6 +157,7 @@ async function getCampaignByAddressHandler(
     instantRefundEligible,
     createdAt: campaign.createdAt,
     metadata: campaign.metadata,
+    hasMilestoneLeaves,
     gracePeriod,
     analytics: {
       uniqueClaimers: analytics.uniqueClaimers,
@@ -115,6 +166,7 @@ async function getCampaignByAddressHandler(
       rootVersionCount: rootVersionList.length,
     },
     rootVersions: rootVersionList,
+    recipients: recipientList,
   });
 }
 

@@ -71,12 +71,11 @@ export function canReleaseMilestone(params: {
   creator: AddressLike;
   cancelledAt: bigint | null;
   releaseType: number;
+  hasMilestoneLeaves?: boolean;
 }): boolean {
-  return (
-    params.releaseType === 2 &&
-    params.cancelledAt === null &&
-    sameAddress(params.viewer, params.creator)
-  );
+  if (params.cancelledAt !== null) return false;
+  if (!sameAddress(params.viewer, params.creator)) return false;
+  return params.releaseType === 2 || (params.hasMilestoneLeaves ?? false);
 }
 
 export function canCancelStream(params: {

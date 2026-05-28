@@ -3,6 +3,7 @@ export type WalletTokenOption = {
   balanceRaw: string;
   decimals: number | null;
   uiAmount: string;
+  isNativeSol?: boolean;
 };
 
 type ParsedTokenAmount = {

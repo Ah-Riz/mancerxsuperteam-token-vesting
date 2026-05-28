@@ -46,6 +46,7 @@ export type WithdrawDisabledParams = {
   cliffTs: bigint;
   milestoneIdx?: number;
   milestoneBitmap?: Uint8Array;
+  milestoneReleased?: boolean;
 };
 
 export type GracePeriodState =
@@ -78,6 +79,8 @@ export function getWithdrawDisabledReason(params: WithdrawDisabledParams): strin
     return "Cliff not reached yet";
   if (params.releaseType === 2 && params.nowTs < params.cliffTs && params.claimable === 0n)
     return "Milestone not unlocked yet";
+  if (params.releaseType === 2 && params.milestoneReleased === false)
+    return "Milestone not released yet";
   if (params.releaseType === 2 && params.claimable === 0n && params.milestoneIdx !== undefined && params.milestoneBitmap) {
     const byteIdx = Math.floor(params.milestoneIdx / 8);
     const bitIdx = params.milestoneIdx % 8;

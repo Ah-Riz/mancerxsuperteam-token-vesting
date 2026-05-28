@@ -34,7 +34,7 @@ async function postWaitlistHandler(req: NextRequest) {
   const { email } = await req.json();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new ValidationError("Email tidak valid");
+    throw new ValidationError("Invalid email address");
   }
 
   try {
@@ -42,11 +42,11 @@ async function postWaitlistHandler(req: NextRequest) {
       email,
       createdAt: Math.floor(Date.now() / 1000),
     });
-    return jsonResponse({ message: "Berhasil bergabung!" });
+    return jsonResponse({ message: "Successfully joined the waitlist!" });
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
     if (code === "23505") {
-      throw new ConflictError("Email sudah terdaftar");
+      throw new ConflictError("Email already registered");
     }
     throw err;
   }
