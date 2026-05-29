@@ -63,7 +63,8 @@ export function MilestoneReleasePanel({
         .accounts({ creator: publicKey, vestingTree: treePubkey })
         .instruction();
       const tx = new Transaction().add(ix);
-      await sendTransaction(tx, connection);
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, "confirmed");
       toast(`Milestone #${idx} released.`, "success");
       onSuccess();
     } catch (err: unknown) {

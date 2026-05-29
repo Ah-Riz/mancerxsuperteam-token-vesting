@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { type Program } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -50,13 +50,9 @@ export function WithdrawUnvestedButton({
       if (isNativeSol(mint)) {
         const ix = await program.methods
           .withdrawUnvested()
-          .accounts({
+          .accountsPartial({
             creator: publicKey,
             vestingTree: treePubkey,
-            vaultAuthority: null,
-            vault: null,
-            creatorAta: null,
-            tokenProgram: null,
             systemProgram: SystemProgram.programId,
           })
           .instruction();

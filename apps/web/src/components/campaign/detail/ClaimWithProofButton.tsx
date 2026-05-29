@@ -521,6 +521,12 @@ export function ClaimWithProofButton({
         const next = prev + selectedClaimableAmount;
         return next > beneficiaryClaimedAmount ? next : beneficiaryClaimedAmount;
       });
+      const claimedAfterCurrent = (leafClaimedTotals[selectedIdx] ?? 0n) + selectedClaimableAmount;
+      const currentLeafAmount = BigInt(String(selectedLeaf.amount));
+      if (claimedAfterCurrent >= currentLeafAmount) {
+        const nextUnclaimed = leaves.findIndex((_, i) => i !== selectedIdx && !leafFullyClaimed[i]);
+        if (nextUnclaimed !== -1) setSelectedIdx(nextUnclaimed);
+      }
       void queryClient.invalidateQueries({
         queryKey: ["claimRecord", treeAddress, beneficiaryAddress],
       });

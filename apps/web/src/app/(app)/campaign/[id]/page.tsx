@@ -943,7 +943,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
           ? `Wait for vesting ${waitCountdown}`
           : isMilestone && waitCountdown
             ? `Wait for milestone ${waitCountdown}`
-            : isMilestone && !milestoneReleased
+            : isMilestone && !milestoneReleased && !milestoneTriggered
               ? "Wait for milestone release"
               : null
       : null;
@@ -998,7 +998,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       ? "Paused"
       : treeState?.cancelledAt
         ? "Cancelled"
-        : totalSupply > 0n && totalClaimed >= totalSupply
+        : displaySupply > 0n && displayClaimed >= displaySupply
           ? "Claimed"
           : "Active";
 
@@ -1008,7 +1008,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
       : treeState?.cancelledAt
         ? "border-red-500/20 bg-red-500/10 text-red-400"
-        : totalSupply > 0n && totalClaimed >= totalSupply
+        : displaySupply > 0n && displayClaimed >= displaySupply
           ? "border-sky-500/20 bg-sky-500/10 text-sky-400"
           : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
 
@@ -1237,13 +1237,9 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       if (native) {
         const refundIx = await program.methods
           .instantRefundCampaign()
-          .accounts({
+          .accountsPartial({
             creator: publicKey,
             vestingTree: treePubkey,
-            vaultAuthority: null,
-            vault: null,
-            creatorAta: null,
-            tokenProgram: null,
             systemProgram: SystemProgram.programId,
           })
           .instruction();
@@ -1426,6 +1422,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             return sendTransaction(tx, connection);
           })();
 
+      await connection.confirmTransaction(sig, "confirmed");
+
       const nextClaimed = totalClaimed + claimable;
       setTxStatus({ type: "success", sig });
       setError(null);
@@ -1446,6 +1444,20 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
           : `Claimed ${formatTokenAmount(claimable)} tokens successfully!`,
         "success",
       );
+      if (releaseType === 2) {
+        queryClient.setQueryData(
+          ["claimRecord", treeAddress, beneficiaryKey],
+          (old: unknown) => {
+            const record = old as { milestoneBitmap?: number[]; claimedAmount?: unknown; lastClaimAt?: unknown } | null | undefined;
+            if (!record) return old;
+            const bitmap = [...(record.milestoneBitmap ?? new Array(32).fill(0))];
+            const byteIdx = Math.floor(Number(milestoneIdx) / 8);
+            const bitIdx = Number(milestoneIdx) % 8;
+            if (byteIdx < bitmap.length) bitmap[byteIdx] |= (1 << bitIdx);
+            return { ...record, milestoneBitmap: bitmap, claimedAmount: new BN(nextClaimed.toString()) };
+          },
+        );
+      }
       void fetchTree(true);
       void campaignDetailQuery.refetch();
       void queryClient.invalidateQueries({
@@ -1666,7 +1678,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
             />
           )}
 
-          <CampaignTimeline treeAddress={treeAddress} />
+          <CampaignTimeline treeAddress={treeAddress} mintDecimals={mintDecimals} />
 
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
             <SectionHeader
@@ -1915,7 +1927,10 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   paused={treeState.paused}
                   milestoneReleasedFlags={treeState.milestoneReleasedFlags}
                   isCreator={treeState.creator && publicKey.equals(treeState.creator)}
-                  onSuccess={fetchTree}
+                  onSuccess={() => {
+                    fetchTree(true);
+                    void queryClient.invalidateQueries({ queryKey: ["claimRecord", treeAddress, beneficiaryKey] });
+                  }}
                   toast={toast}
                 />
               ) : isMultiRecipient && program ? (
@@ -1955,7 +1970,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                       milestoneIdx={Number(milestoneIdx)}
                       alreadyReleased={milestoneReleased}
                       canRelease={canShowReleaseMilestone}
-                      onSuccess={fetchTree}
+                      onSuccess={() => fetchTree(true)}
                       toast={toast}
                     />
                   )}
@@ -1971,7 +1986,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   milestoneReleasedFlags={treeState.milestoneReleasedFlags}
                   leafCount={treeState.leafCount}
                   canRelease={canShowReleaseMilestone}
-                  onSuccess={fetchTree}
+                  onSuccess={() => fetchTree(true)}
                   toast={toast}
                 />
               )}
@@ -2039,7 +2054,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   cancelledAt={cancelledAtBigint}
                   isCreator={canShowWithdrawUnvested}
                   nowTs={nowTs}
-                  onSuccess={fetchTree}
+                  onSuccess={() => fetchTree(true)}
                   toast={toast}
                 />
               )}
@@ -2053,7 +2068,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   claimedAmount={BigInt(claimRecordQuery.data.claimedAmount.toString())}
                   cancelledAt={cancelledAtBigint}
                   nowTs={nowTs}
-                  onSuccess={fetchTree}
+                  onSuccess={() => fetchTree(true)}
                   toast={toast}
                 />
               )}

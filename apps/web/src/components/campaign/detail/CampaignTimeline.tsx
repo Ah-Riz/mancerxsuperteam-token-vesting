@@ -24,9 +24,16 @@ function formatBlockTime(blockTime: string): string {
   });
 }
 
-function formatAmount(raw: string): string {
+function formatAmount(raw: string, decimals: number | null): string {
   const n = Number(raw);
   if (!n) return raw;
+  if (decimals !== null && decimals > 0) {
+    const human = n / 10 ** decimals;
+    if (human >= 1_000_000) return `${(human / 1_000_000).toFixed(2)}M`;
+    if (human >= 1_000) return `${(human / 1_000).toFixed(1)}K`;
+    const fracDigits = human % 1 === 0 ? 0 : Math.min(4, decimals);
+    return human.toLocaleString(undefined, { maximumFractionDigits: fracDigits });
+  }
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -46,17 +53,17 @@ const EVENT_CONFIG: Record<
   stream_cancelled: { icon: "⚡", color: "text-orange-400", label: "Stream Settled" },
 };
 
-function eventDescription(event: TimelineEvent): string {
+function eventDescription(event: TimelineEvent, decimals: number | null): string {
   const { type, data } = event;
   switch (type) {
     case "claimed": {
       const beneficiary = data.beneficiary as string | undefined;
       const amount = data.amount as string | undefined;
-      return `${beneficiary ? truncateAddress(beneficiary) : "User"} claimed ${amount ? formatAmount(amount) : "tokens"}`;
+      return `${beneficiary ? truncateAddress(beneficiary) : "User"} claimed ${amount ? formatAmount(amount, decimals) : "tokens"}`;
     }
     case "cancelled": {
       const claimedAtCancel = data.claimedAtCancel as string | undefined;
-      return `Campaign cancelled${claimedAtCancel ? ` (${formatAmount(claimedAtCancel)} claimed at cancel)` : ""}`;
+      return `Campaign cancelled${claimedAtCancel ? ` (${formatAmount(claimedAtCancel, decimals)} claimed at cancel)` : ""}`;
     }
     case "paused": {
       const paused = data.paused as boolean | undefined;
@@ -68,7 +75,7 @@ function eventDescription(event: TimelineEvent): string {
     }
     case "withdrawn": {
       const amount = data.amount as string | undefined;
-      return `Creator withdrew ${amount ? formatAmount(amount) : "unvested tokens"}`;
+      return `Creator withdrew ${amount ? formatAmount(amount, decimals) : "unvested tokens"}`;
     }
     case "milestone_released": {
       const idx = data.milestoneIdx as number | undefined;
@@ -77,14 +84,14 @@ function eventDescription(event: TimelineEvent): string {
     case "stream_cancelled": {
       const toBeneficiary = data.amountToBeneficiary as string | undefined;
       const toCreator = data.amountToCreator as string | undefined;
-      return `Stream settled${toBeneficiary ? ` — ${formatAmount(toBeneficiary)} to recipient` : ""}${toCreator ? `, ${formatAmount(toCreator)} to creator` : ""}`;
+      return `Stream settled${toBeneficiary ? ` — ${formatAmount(toBeneficiary, decimals)} to recipient` : ""}${toCreator ? `, ${formatAmount(toCreator, decimals)} to creator` : ""}`;
     }
     default:
       return type;
   }
 }
 
-function TimelineItem({ event }: { event: TimelineEvent }) {
+function TimelineItem({ event, mintDecimals }: { event: TimelineEvent; mintDecimals: number | null }) {
   const config = EVENT_CONFIG[event.type] ?? {
     icon: "•",
     color: "text-[#8b92a5]",
@@ -102,7 +109,7 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-[#c8cdd8]">
-          {eventDescription(event)}
+          {eventDescription(event, mintDecimals)}
         </p>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#555d73]">
           <span>{formatBlockTime(event.blockTime)}</span>
@@ -123,8 +130,10 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
 
 export function CampaignTimeline({
   treeAddress,
+  mintDecimals,
 }: {
   treeAddress: string;
+  mintDecimals?: number | null;
 }) {
   const { data, isLoading, error } = useCampaignTimeline(treeAddress);
 
@@ -178,7 +187,7 @@ export function CampaignTimeline({
       </div>
       <div className="divide-y divide-white/[0.04]">
         {data.events.map((event) => (
-          <TimelineItem key={event.signature} event={event} />
+          <TimelineItem key={event.signature} event={event} mintDecimals={mintDecimals ?? null} />
         ))}
       </div>
     </div>

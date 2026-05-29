@@ -32,6 +32,8 @@ export function CloseClaimRecordButton({
   onSuccess,
   toast,
 }: Props) {
+  const { sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
 
   const fullyClaimed = totalEntitled > 0n && claimedAmount >= totalEntitled;
@@ -43,14 +45,17 @@ export function CloseClaimRecordButton({
     setLoading(true);
     try {
       const [claimRecordPda] = derivePda(["claim", treePubkey.toBuffer(), publicKey.toBuffer()]);
-      await program.methods
+      const ix = await program.methods
         .closeClaimRecord()
         .accounts({
           beneficiary: publicKey,
           vestingTree: treePubkey,
           claimRecord: claimRecordPda,
         })
-        .rpc();
+        .instruction();
+      const tx = new Transaction().add(ix);
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, "confirmed");
       toast("Claim record closed. Rent reclaimed.", "success");
       onSuccess();
     } catch (err: unknown) {
