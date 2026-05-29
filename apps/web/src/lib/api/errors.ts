@@ -6,17 +6,6 @@ import { jsonResponse } from "@/lib/api/json-response";
 import { logRequest } from "@/lib/api/logger";
 import { API_VERSION } from "@/lib/api/version";
 
-// Lazily import Sentry so the module remains usable when DSN is not configured
-async function captureToSentry(error: unknown): Promise<void> {
-  if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
-  try {
-    const { captureException } = await import("@sentry/nextjs");
-    captureException(error);
-  } catch {
-    // Sentry unavailable — continue silently
-  }
-}
-
 export type ErrorCode =
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
@@ -33,7 +22,8 @@ export type ErrorCode =
   | "GRACE_PERIOD_ACTIVE"
   | "NOT_CANCELLED"
   | "NOT_SINGLE_STREAM"
-  | "MILESTONE_ALREADY_RELEASED";
+  | "MILESTONE_ALREADY_RELEASED"
+  | "NOT_ELIGIBLE_FOR_INSTANT_REFUND";
 
 export class AppError extends Error {
   constructor(
@@ -192,9 +182,6 @@ export function errorHandler(handler: RouteHandler): RouteHandler {
         message: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
       });
-
-      // Report unhandled errors to Sentry when DSN is configured
-      void captureToSentry(error);
 
       return errorResponse(new InternalError(), requestId);
     }

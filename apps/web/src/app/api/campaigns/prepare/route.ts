@@ -81,13 +81,13 @@ async function postPrepareHandler(request: NextRequest) {
     merkleRoot: prepared.rootHex,
     leafCount: prepared.leafCount,
     totalSupply: prepared.totalSupply.toString(),
+    minCliffTime: prepared.minCliffTime.toString(),
     leaves,
   });
 }
 
 export const POST = withRoute(
   {
-    auth: true,
     rateLimit: { requests: 10, window: 60 },
     bodyLimit: "campaigns",
   },
