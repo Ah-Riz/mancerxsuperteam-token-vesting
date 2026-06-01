@@ -193,14 +193,30 @@ let beServer: ChildProcess | null = null;
 
 async function startBeServer(): Promise<void> {
   if (process.env.BE_API_URL) return; // external server already running
+  // Skip server startup entirely when pnpm or DATABASE_URL are unavailable
+  if (!process.env.DATABASE_URL) return;
 
   return new Promise<void>((resolveFn, reject) => {
     const webDir = resolve(__dirname, "../../apps/web");
-    beServer = spawn("pnpm", ["dev", "--port", "3099"], {
-      cwd: webDir,
-      env: { ...process.env, PORT: "3099", NODE_ENV: "test" },
-      stdio: "pipe",
-    });
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolveFn();
+    };
+
+    try {
+      beServer = spawn("pnpm", ["dev", "--port", "3099"], {
+        cwd: webDir,
+        env: { ...process.env, PORT: "3099", NODE_ENV: "test" },
+        stdio: "pipe",
+      });
+    } catch (e) {
+      finish(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
+
     let output = "";
     const check = (data: Buffer) => {
       output += data.toString();
@@ -209,13 +225,14 @@ async function startBeServer(): Promise<void> {
         output.includes("Local:") ||
         output.includes("http://localhost")
       ) {
-        resolveFn();
+        finish();
       }
     };
     beServer.stdout?.on("data", check);
     beServer.stderr?.on("data", check);
+    beServer.on("error", (err) => finish(err));
     setTimeout(
-      () => reject(new Error("BE server startup timed out after 30s")),
+      () => finish(new Error("BE server startup timed out after 30s")),
       30_000,
     );
   });
@@ -382,7 +399,14 @@ describe("week7: BE + on-chain integration flows", function () {
   before(async () => {
     ctx = await startTest();
 
-    // Attempt to start BE server for API tests
+    // Attempt to start BE server for API tests.
+    // All BE failures are non-fatal — on-chain tests run independently.
+    if (!process.env.DATABASE_URL) {
+      console.warn(
+        "[week7] DATABASE_URL not set -- BE-dependent assertions will be skipped",
+      );
+      return;
+    }
     try {
       await cleanBeDatabase();
       await startBeServer();
