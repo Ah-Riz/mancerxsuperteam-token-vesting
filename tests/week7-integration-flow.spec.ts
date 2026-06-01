@@ -685,7 +685,6 @@ describe("week7: BE + on-chain integration flows", function () {
 
       beneficiary = await makeBeneficiaryTx(provider);
 
-      const cliffTime = now + 100;
       const endTime = now + 10_000;
       // Use Linear schedule so we can claim PARTIAL tokens and keep the
       // campaign active (totalClaimed < totalSupply) for pause/cancel tests.
@@ -861,41 +860,6 @@ describe("week7: BE + on-chain integration flows", function () {
       }
     });
 
-    it("cancel on-chain + BE detail", async () => {
-      const { program } = ctx;
-
-      await program.methods
-        .cancelCampaign()
-        .accounts({
-          cancelAuthority: ctx.cancelAuthority.publicKey,
-          vestingTree: treePda,
-        })
-        .signers([ctx.cancelAuthority])
-        .rpc();
-
-      const treeAccount = await program.account.vestingTree.fetch(treePda);
-      expect(treeAccount.cancelledAt).to.not.equal(null);
-
-      // Seed cancel event in DB
-      if (beAvailable) {
-        await seedCancelEvent(internalCampaignId, {
-          cancelledAt: now + 500,
-          claimedAtCancel: 400_000,
-          signature: `cancel_sig_${Date.now()}`,
-          slot: ++claimSlot,
-          blockTime: now + 500,
-        });
-        await updateCampaignCancelledAt(treePda.toBase58(), now + 500);
-
-        // Verify BE campaign detail shows cancelled state
-        const detailRes = await beGet(`/api/campaigns/${treePda.toBase58()}`);
-        expect(detailRes.status).to.equal(200);
-        const detailData = detailRes.data as any;
-        expect(detailData.cancelledAt).to.equal(String(now + 500));
-        expect(detailData.gracePeriod).to.not.equal(null);
-      }
-    });
-
     it("claim partial (40%) verified on-chain + BE claims/timeline", async () => {
       const { context, program } = ctx;
 
@@ -951,6 +915,41 @@ describe("week7: BE + on-chain integration flows", function () {
           (e: any) => e.type === "claimed",
         );
         expect(claimEvents.length).to.be.at.least(1);
+      }
+    });
+
+    it("cancel on-chain + BE detail", async () => {
+      const { program } = ctx;
+
+      await program.methods
+        .cancelCampaign()
+        .accounts({
+          cancelAuthority: ctx.cancelAuthority.publicKey,
+          vestingTree: treePda,
+        })
+        .signers([ctx.cancelAuthority])
+        .rpc();
+
+      const treeAccount = await program.account.vestingTree.fetch(treePda);
+      expect(treeAccount.cancelledAt).to.not.equal(null);
+
+      // Seed cancel event in DB
+      if (beAvailable) {
+        await seedCancelEvent(internalCampaignId, {
+          cancelledAt: now + 4000,
+          claimedAtCancel: 400_000,
+          signature: `cancel_sig_${Date.now()}`,
+          slot: ++claimSlot,
+          blockTime: now + 4000,
+        });
+        await updateCampaignCancelledAt(treePda.toBase58(), now + 4000);
+
+        // Verify BE campaign detail shows cancelled state
+        const detailRes = await beGet(`/api/campaigns/${treePda.toBase58()}`);
+        expect(detailRes.status).to.equal(200);
+        const detailData = detailRes.data as any;
+        expect(detailData.cancelledAt).to.equal(String(now + 4000));
+        expect(detailData.gracePeriod).to.not.equal(null);
       }
     });
 
