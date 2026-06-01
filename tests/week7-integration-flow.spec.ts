@@ -534,7 +534,7 @@ describe("week7: BE + on-chain integration flows", function () {
       // Fund campaign
       const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
       await program.methods
-        .fundCampaign({ amount: new BN(prepared.totalSupply.toString()) })
+        .fundCampaign(new BN(prepared.totalSupply.toString()))
         .accounts({
           creator: creator.publicKey,
           vestingTree: treePda,
@@ -737,7 +737,7 @@ describe("week7: BE + on-chain integration flows", function () {
 
       const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
       await program.methods
-        .fundCampaign({ amount: new BN(1_000_000) })
+        .fundCampaign(new BN(1_000_000))
         .accounts({
           creator: creator.publicKey,
           vestingTree: treePda,
@@ -1047,7 +1047,7 @@ describe("week7: BE + on-chain integration flows", function () {
 
         const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
         await program.methods
-          .fundCampaign({ amount: new BN(10_000) })
+          .fundCampaign(new BN(10_000))
           .accounts({
             creator: creator.publicKey,
             vestingTree: treePda,
@@ -1164,7 +1164,7 @@ describe("week7: BE + on-chain integration flows", function () {
 
         const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
         await program.methods
-          .fundCampaign({ amount: new BN(10_000) })
+          .fundCampaign(new BN(10_000))
           .accounts({
             creator: creator.publicKey,
             vestingTree: treePda,
@@ -1310,7 +1310,7 @@ describe("week7: BE + on-chain integration flows", function () {
 
         const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
         await program.methods
-          .fundCampaign({ amount: new BN(10_000) })
+          .fundCampaign(new BN(10_000))
           .accounts({
             creator: creator.publicKey,
             vestingTree: treePda,
@@ -1456,7 +1456,7 @@ describe("week7: BE + on-chain integration flows", function () {
 
         const creatorAta = getAssociatedTokenAddressSync(mint, creator.publicKey);
         await program.methods
-          .fundCampaign({ amount: new BN(3_000_000) })
+          .fundCampaign(new BN(3_000_000))
           .accounts({
             creator: creator.publicKey,
             vestingTree: treePda,
