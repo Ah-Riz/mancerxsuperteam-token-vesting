@@ -7,6 +7,9 @@ import { resetRedisForTests } from "@/lib/api/redis";
 export const CREATOR = "11111111111111111111111111111112";
 export const MINT = "11111111111111111111111111111114";
 export const BENEFICIARY = "11111111111111111111111111111111";
+
+/** Default creator for authenticated campaign creation — matches wallet-auth's TEST_CREATOR_KEYPAIR */
+export { TEST_CREATOR_KEYPAIR };
 export const OTHER_BENEFICIARY = "22222222222222222222222222222222";
 
 export const EMPTY_SIBLING = new Array(32).fill(0) as number[];
@@ -38,7 +41,7 @@ export function makeCampaignBody(overrides: Record<string, unknown> = {}) {
 
   return {
     treeAddress,
-    creator: CREATOR,
+    creator: (overrides.creator as string) ?? TEST_CREATOR_KEYPAIR.publicKey.toBase58(),
     mint: MINT,
     merkleRoot: "a".repeat(64),
     leafCount: 1,

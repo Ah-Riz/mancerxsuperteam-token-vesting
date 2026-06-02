@@ -19,7 +19,7 @@ import {
   makeLeaf,
   makeUrl,
 } from "./requests";
-import { createAuthHeader } from "./wallet-auth";
+import { createAuthHeader, TEST_CREATOR_KEYPAIR } from "./wallet-auth";
 import { resetRedisForTests } from "@/lib/api/redis";
 
 export function uniqueTreeAddress(): string {
