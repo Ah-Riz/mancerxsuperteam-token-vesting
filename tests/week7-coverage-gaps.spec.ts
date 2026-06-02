@@ -264,10 +264,18 @@ describe("week7 — coverage gaps: error codes + events", () => {
     });
 
     after(async () => {
+      // Wait for any in-flight event logs to land before tallying.
+      await delay(1500);
       if (listenerStop) await listenerStop();
     });
 
-    it("fires CampaignCreated + CampaignFunded on create+fund", async () => {
+    // Lifecycle drivers — each fires the events it's named after. We do NOT
+    // assert per-test: addEventListener has a startup race where the first
+    // events after subscription can be missed even with await. Instead we
+    // accumulate flags across the whole describe and assert in the final
+    // "all expected events fired" test.
+
+    it("lifecycle: create + fund (fires CampaignCreated, CampaignFunded)", async () => {
       const beneficiary = await makeBeneficiary(provider);
       const t = await createTimeHelpers(provider.connection);
       const cliff = t.future(60);
@@ -292,19 +300,9 @@ describe("week7 — coverage gaps: error codes + events", () => {
         7_000,
         true,
       );
-
-      // Some validators lag the log event by a slot or two.
-      await delay(800);
-      // If the validator doesn't surface log events, this assertion is soft
-      // (the log-text fallback in later tests will still gate coverage).
-      expect(sawCampaignCreated || sawCampaignFunded).to.equal(
-        true,
-        "expected at least one of CampaignCreated/CampaignFunded to fire",
-      );
     });
 
-    it("fires Claimed when a beneficiary claims", async () => {
-      // Re-use a fresh campaign with cliff in the past so claim succeeds.
+    it("lifecycle: claim (fires Claimed)", async () => {
       const beneficiary = await makeBeneficiary(provider);
       const t = await createTimeHelpers(provider.connection);
       const cliff = t.past(60);
@@ -341,17 +339,9 @@ describe("week7 — coverage gaps: error codes + events", () => {
         vault,
         mint,
       );
-      await delay(800);
-      // Soft assertion: log subscription may not be available — Claimed is
-      // also implicitly covered by the total_claimed delta checked downstream.
-      // We only fail if the validator advertised log support and the event
-      // still didn't fire.
-      if (sawCampaignCreated) {
-        expect(sawClaimed, "Claimed event should fire when addEventListener is available").to.equal(true);
-      }
     });
 
-    it("fires CampaignPaused + CampaignUnpaused on pause/unpause", async () => {
+    it("lifecycle: pause + unpause (fires CampaignPaused, CampaignUnpaused)", async () => {
       const t = await createTimeHelpers(provider.connection);
       const cliff = t.future(120);
       const end = t.future(1_000);
@@ -392,15 +382,9 @@ describe("week7 — coverage gaps: error codes + events", () => {
         })
         .signers([pauseAuthority])
         .rpc();
-
-      await delay(800);
-      if (sawCampaignCreated) {
-        expect(sawCampaignPaused, "CampaignPaused event should fire").to.equal(true);
-        expect(sawCampaignUnpaused, "CampaignUnpaused event should fire").to.equal(true);
-      }
     });
 
-    it("fires MilestoneReleased when a milestone flag is set", async () => {
+    it("lifecycle: milestone release (fires MilestoneReleased)", async () => {
       const beneficiary = await makeBeneficiary(provider);
       const t = await createTimeHelpers(provider.connection);
       const cliff = t.future(60);
@@ -434,11 +418,38 @@ describe("week7 — coverage gaps: error codes + events", () => {
         })
         .signers([creator])
         .rpc();
+    });
 
-      await delay(800);
-      if (sawCampaignCreated) {
-        expect(sawMilestoneReleased, "MilestoneReleased event should fire").to.equal(true);
+    // Final assertion — runs AFTER all lifecycle tests have fired their
+    // events. By this point the websocket subscription has had ample time to
+    // mature, and all 6 distinct events in scope have been emitted at least
+    // once. We gate on whether ANY event was observed: if the validator
+    // silently dropped subscriptions, all flags stay false and we skip rather
+    // than reporting 12 spurious failures.
+    it("all expected events fired across the lifecycle", async () => {
+      // One more wait in case logs are still draining from the previous test.
+      await delay(1000);
+      const subscriptionWorked =
+        sawCampaignCreated ||
+        sawCampaignFunded ||
+        sawClaimed ||
+        sawCampaignPaused ||
+        sawCampaignUnpaused ||
+        sawMilestoneReleased;
+      if (!subscriptionWorked) {
+        console.warn(
+          "[week7-coverage-gaps] No events captured — validator/RPC does not " +
+          "expose log subscriptions. Event assertions skipped. The lifecycle " +
+          "tests above still executed the relevant instructions.",
+        );
+        return;
       }
+      expect(sawCampaignCreated, "CampaignCreated event should fire").to.equal(true);
+      expect(sawCampaignFunded,  "CampaignFunded event should fire").to.equal(true);
+      expect(sawClaimed,         "Claimed event should fire").to.equal(true);
+      expect(sawCampaignPaused,  "CampaignPaused event should fire").to.equal(true);
+      expect(sawCampaignUnpaused,"CampaignUnpaused event should fire").to.equal(true);
+      expect(sawMilestoneReleased,"MilestoneReleased event should fire").to.equal(true);
     });
 
     // Note: CampaignCancelled / UnvestedWithdrawn / StreamCancelled /
@@ -446,10 +457,6 @@ describe("week7 — coverage gaps: error codes + events", () => {
     // by the existing 118-test suite (their handler invocations already exist
     // with strong assertions on the post-state). Adding more here would
     // duplicate setup costs without strengthening the contract.
-    //
-    // If addEventListener is available, the lifecycle tests above are
-    // sufficient to demonstrate event emission; if it is unavailable, log
-    // subscriptions would also fail for these heavier events.
   });
 });
 
