@@ -65,6 +65,7 @@ import {
   updateCampaignCancelledAt,
   updateCampaignPaused,
   BE_BASE,
+  createTestAuthHeader,
 } from "./utils/be-api";
 
 // ---------------------------------------------------------------------------
@@ -556,6 +557,7 @@ describe("week7: BE + on-chain integration flows", function () {
           const beLeaves = prepared.leaves.map((leaf, i) =>
             leafToBeFormat(leaf, prepared.proofs[i]),
           );
+          const authHeader = await createTestAuthHeader(ctx.creator);
           internalCampaignId = await indexCampaign({
             treePda,
             creator: ctx.creator.publicKey,
@@ -570,7 +572,7 @@ describe("week7: BE + on-chain integration flows", function () {
             pauseAuthority: ctx.pauseAuthority.publicKey,
             createdAt: now,
             leaves: beLeaves,
-          });
+          }, authHeader);
         } catch (e) {
           console.warn("[Flow 1] BE indexing failed, skipping BE assertions:", e);
           beAvailable = false;
@@ -757,6 +759,7 @@ describe("week7: BE + on-chain integration flows", function () {
           const beLeaves = prepared.leaves.map((l, i) =>
             leafToBeFormat(l, prepared.proofs[i]),
           );
+          const authHeader = await createTestAuthHeader(creator);
           internalCampaignId = await indexCampaign({
             treePda,
             creator: creator.publicKey,
@@ -771,7 +774,7 @@ describe("week7: BE + on-chain integration flows", function () {
             pauseAuthority: pauseAuthority.publicKey,
             createdAt: now,
             leaves: beLeaves,
-          });
+          }, authHeader);
         } catch (e) {
           console.warn("[Flow 2] BE indexing failed:", e);
           beAvailable = false;
@@ -1478,6 +1481,7 @@ describe("week7: BE + on-chain integration flows", function () {
             const beLeaves = prepared.leaves.map((leaf, i) =>
               leafToBeFormat(leaf, prepared.proofs[i]),
             );
+            const authHeader = await createTestAuthHeader(creator);
             internalCampaignId = await indexCampaign({
               treePda,
               creator: creator.publicKey,
@@ -1492,7 +1496,7 @@ describe("week7: BE + on-chain integration flows", function () {
               pauseAuthority: pauseAuthority.publicKey,
               createdAt: now,
               leaves: beLeaves,
-            });
+            }, authHeader);
           } catch (e) {
             console.warn("[Flow 4 multi-leaf] BE indexing failed:", e);
           }

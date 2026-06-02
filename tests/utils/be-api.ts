@@ -5,7 +5,8 @@
  * and `postgres` for direct event seeding (the indexer can't observe bankrun).
  */
 import postgres from "postgres";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
+import nacl from "tweetnacl";
 import { expect } from "chai";
 
 // ---------------------------------------------------------------------------
@@ -33,15 +34,45 @@ export async function beGet(path: string): Promise<BeApiResponse> {
 export async function bePost(
   path: string,
   body: unknown,
+  authHeader?: string,
 ): Promise<BeApiResponse> {
   const url = `${BE_BASE}${path}`;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (authHeader) headers.authorization = authHeader;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   const data = await res.json();
   return { status: res.status, data };
+}
+
+// ---------------------------------------------------------------------------
+// Auth helper — mirrors scripts/test-be-merkle-pipeline.ts
+// ---------------------------------------------------------------------------
+
+/**
+ * Requests a nonce and signs it with the given keypair.
+ * Returns the full Authorization header value for passing to bePost().
+ */
+export async function createTestAuthHeader(
+  creator: Keypair,
+): Promise<string> {
+  const nonceRes = await fetch(`${BE_BASE}/api/auth/nonce`);
+  if (!nonceRes.ok) {
+    throw new Error(`GET /api/auth/nonce failed: HTTP ${nonceRes.status}`);
+  }
+  const { nonce } = (await nonceRes.json()) as { nonce: string };
+  const message = {
+    nonce,
+    timestamp: Date.now(),
+    wallet: creator.publicKey.toBase58(),
+  };
+  const messageBytes = Buffer.from(JSON.stringify(message), "utf8");
+  const signature = nacl.sign.detached(messageBytes, creator.secretKey);
+  const token = `${Buffer.from(signature).toString("base64")}.${messageBytes.toString("base64")}`;
+  return `Bearer ${token}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +105,10 @@ export interface IndexCampaignOpts {
   }>;
 }
 
-export async function indexCampaign(opts: IndexCampaignOpts): Promise<number> {
+export async function indexCampaign(
+  opts: IndexCampaignOpts,
+  authHeader?: string,
+): Promise<number> {
   const body = {
     treeAddress: opts.treePda.toBase58(),
     creator: opts.creator.toBase58(),
@@ -89,7 +123,7 @@ export async function indexCampaign(opts: IndexCampaignOpts): Promise<number> {
     createdAt: opts.createdAt,
     leaves: opts.leaves,
   };
-  const res = await bePost("/api/campaigns", body);
+  const res = await bePost("/api/campaigns", body, authHeader);
   expect(res.status).to.be.oneOf([200, 201], `indexCampaign failed: ${JSON.stringify(res.data)}`);
   return (res.data as any).campaignId;
 }
